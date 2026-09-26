@@ -26,6 +26,10 @@ export default function Home() {
         <Link href={`/${EXAMPLE}`} className="underline">
           the April EOM Ralph Lauren drop
         </Link>
+        {" · "}
+        <Link href="/dashboard" className="underline">
+          Your account, agent card and Grok Bot
+        </Link>
       </p>
     </main>
   );
