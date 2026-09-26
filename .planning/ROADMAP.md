@@ -21,12 +21,13 @@ One-day build, worked strictly top-down. Phase 1 delivers the core value (prefix
 **Goal**: Visiting `/<store-url>` starts a scrape, renders a live category tree, and `GET /v1/sessions/{code}/products` returns ranked products from the DB.
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
-**Requirements**: SCRP-01, SCRP-02, SCRP-03, SCRP-04, SCRP-05, SCRP-06, SCRP-07, API-01, API-02, API-03, API-04, API-05, API-06, API-07, WEB-01, WEB-02
+**Requirements**: SCRP-01, SCRP-02, SCRP-03, SCRP-04, SCRP-05, SCRP-06, SCRP-07, API-01, API-02, API-03, API-04, API-05, API-06, API-07, API-08, API-09, WEB-01, WEB-02
 **Success Criteria** (what must be TRUE):
   1. `POST /v1/sessions` with a Fleek collection URL returns `202` and a session code; a non-allowlisted URL returns `400 domain_not_allowed`
   2. Within a minute, `products` rows exist with title, price, per-piece price, image and tree path taken from the page (fixture or Bright Data)
   3. `GET /v1/sessions/{code}/products` and `/tree` return compact JSON matching `docs/API.md`
-  4. Visiting `localhost:3000/https://www.joinfleek.com/collections/nike` shows the tree filling in live
+  4. `GET /v1/sessions/{code}/brief` opened in a plain browser tab (no auth) returns a readable summary, including while the scrape is still `crawling`
+  5. Visiting `localhost:3000/https://www.joinfleek.com/collections/nike` shows the tree filling in live
 **Plans**: TBD
 **UI hint**: yes
 
@@ -38,7 +39,7 @@ One-day build, worked strictly top-down. Phase 1 delivers the core value (prefix
 **Success Criteria** (what must be TRUE):
   1. "premium only under 14 a piece" parses into a structured rules object shown as chips
   2. Products endpoint never returns an item that violates a hard-filter rule
-  3. Grok Bot, given a session code, calls the API through the public tunnel URL and lists matching products with reasons
+  3. "Continue to Grok" opens a Grok prefill link (`grok.com/?q=...`) containing the `/brief` URL; Grok fetches it through the public tunnel hostname and lists matching products with reasons
 **Plans**: TBD
 **UI hint**: yes
 

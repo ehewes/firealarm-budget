@@ -24,6 +24,8 @@
 - [ ] **API-05**: `GET /v1/sessions/{code}/products/{id}` returns full product detail including `attrs`
 - [ ] **API-06**: Errors use `{"error": {"code", "message"}}` with codes from `docs/API.md`
 - [ ] **API-07**: OpenAPI spec at `/openapi.json` has clear field names and descriptions for Grok to consume
+- [ ] **API-08**: `GET /v1/sessions/{code}/brief` returns one plain-text/markdown summary (store, rules, scrape status, top picks with `why`, links to filtered `/products` URLs); while `crawling` it returns partial results plus a retry hint
+- [ ] **API-09**: Every Grok-facing endpoint is a plain `GET` with the code in the path, no auth header, and `Cache-Control: no-store`, so Grok's browsing tool can read it from a prefill link
 
 ### Web
 
@@ -57,8 +59,8 @@
 ## v2 Requirements
 
 - **SCRP-08**: Multi-page collection crawling
-- **API-08**: `POST /v1/sessions/{code}/products/{id}/refresh` exposed to Grok
-- **API-09**: Rate limiting on `POST /v1/sessions` per IP / user
+- **API-10**: `POST /v1/sessions/{code}/products/{id}/refresh` exposed to Grok
+- **API-11**: Rate limiting on `POST /v1/sessions` per IP / user
 - **GROK-03**: MCP wrapper (`fastapi-mcp`) if Grok Bot requires MCP
 
 ## Out of Scope
@@ -75,7 +77,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SCRP-01..07 | Phase 1 | Pending |
-| API-01..07 | Phase 1 | Pending |
+| API-01..09 | Phase 1 | Pending |
 | WEB-01..02 | Phase 1 | Pending |
 | RULE-01..03 | Phase 2 | Pending |
 | GROK-01..02 | Phase 2 | Pending |
@@ -84,10 +86,10 @@
 | BUY-01..05 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 31 total
-- Mapped to phases: 31
+- v1 requirements: 33 total
+- Mapped to phases: 33
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-26*
-*Last updated: 2026-09-26 after initialization*
+*Last updated: 2026-09-26 after adding Grok prefill handoff requirements (API-08, API-09)*

@@ -38,6 +38,7 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- Init: Grok-facing reads are plain unauthenticated GETs; `/brief` endpoint added to Phase 1 (API-08, API-09).
 - Init: Fetcher behind `fetch(url) -> html` interface with fixture fallback so API work is not blocked by teammate's Bright Data / Cloudflare Tunnel setup.
 
 ### Pending Todos
@@ -46,7 +47,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- Grok Bot tool registration mechanism unknown (OpenAPI import vs MCP only) — ask sponsor; affects Phase 2.
+- Grok handoff plan: prefill link (`grok.com/?q=...`, format unconfirmed) carrying the `/brief` URL. Unverified that Grok's browsing fetches our URL — 5-min test: paste a public JSON URL into Grok. If it fails, ask sponsor about tool registration / MCP.
+- Cloudflare Bot Fight Mode / WAF challenge must be off for the API hostname, and tunnel must use a stable named hostname (teammate's infra).
 - `docs/PLAN.md` duplicates ARCHITECTURE.md — day plan / demo script missing.
 - Ownership boundary with teammate's infra agent: agree who owns `app/services/scraper.py` and `.env`.
 

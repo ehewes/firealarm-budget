@@ -21,7 +21,7 @@ Prefixing a store URL produces a live category tree and a rules-filtered, ranked
 - [ ] Live tree renders on the page as products arrive (Supabase Realtime)
 - [ ] Public products endpoint returns compact, ranked items with a `why` per item
 - [ ] Rules (plain language → structured) are applied server-side
-- [ ] "Continue to Grok" hands the session code to Grok Bot, which calls the Eden API as tools
+- [ ] "Continue to Grok" opens a Grok prefill link carrying the session's `/brief` URL; Grok reads the Eden API over plain GETs
 - [ ] Session page shows Grok's picks as preview cards rendered from the DB
 - [ ] Anonymous auth for guests; sign-up keeps data; saved rulesets and past sessions
 - [ ] (Stretch) Purchase intent → confirm on Eden → single-use card → checkout on dev store
@@ -60,6 +60,7 @@ Prefixing a store URL produces a live category tree and a rules-filtered, ranked
 | Session code = read-only capability | Codes appear in chat; never authorise spending | — Pending |
 | Purchases confirmed on Eden, not in chat | LLM never interprets chat as payment authorisation | — Pending |
 | Fetcher behind interface with fixture fallback | Unblocks API work while Bright Data/tunnel infra is set up by teammate | — Pending |
+| Grok handoff via prefill link + GET-only `/brief` endpoint | Prefill only puts text in chat; Grok reads our data with its browsing tool, so reads must be unauthenticated GETs | — Pending |
 | Lean GSD: no research agents, coarse phases | Specs already exist; hackathon time budget | — Pending |
 
 ## Evolution
