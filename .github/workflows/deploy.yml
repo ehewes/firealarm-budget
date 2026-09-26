@@ -1,0 +1,188 @@
+# Build the images, migrate the database, and roll out to the VPS. See docs/DEPLOYMENT.md.
+#
+# Called by ci.yml after CI passes on main (when DEPLOY_ENABLED is 'true'), or run by hand.
+# Set image_tag to an older commit SHA to roll back: that skips the build and the migration.
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing image tag (a commit SHA) to roll back to. Blank builds this commit.
+        type: string
+        required: false
+        default: ""
+
+# Deploys queue rather than cancel: a half-applied rollout is worse than a late one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # A lowercase literal, matching deploy/compose*.yml, which cannot compute a name.
+  IMAGE: ghcr.io/ehewes/firealarm-budget
+  IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+
+jobs:
+  build:
+    if: inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: web
+        run: echo "exists=$([ -f apps/web/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/api.Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}-api:${{ github.sha }},${{ env.IMAGE }}-api:latest
+          build-args: GIT_SHA=${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Web image
+        if: steps.web.outputs.exists == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/web.Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}-web:${{ github.sha }},${{ env.IMAGE }}-web:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_GROK_BOT_URL=${{ vars.NEXT_PUBLIC_GROK_BOT_URL }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  migrate:
+    needs: build
+    if: inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # The session pooler URL: GitHub runners are IPv4-only and the direct db.<ref> host is
+      # IPv6-only. Never --include-seed. Migrations must stay compatible with the version
+      # still running, because they land before the new images start.
+      - name: Apply new migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then echo "::error::SUPABASE_DB_URL is not set"; exit 1; fi
+          supabase db push --db-url "$SUPABASE_DB_URL" --yes
+
+  deploy:
+    needs: [build, migrate]
+    if: >-
+      always() && !cancelled()
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+      && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # SSH on the VPS is reachable only over Tailscale. The runner joins as an ephemeral
+      # tag:ci node for the length of the job. An OAuth client never expires; an auth key
+      # (the fallback) does, and then this step times out like a network fault.
+      - name: Join the tailnet (OAuth client)
+        if: env.TS_OAUTH_CLIENT_ID != ''
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Join the tailnet (auth key)
+        if: env.TS_OAUTH_CLIENT_ID == '' && env.TS_AUTHKEY != ''
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:ci
+
+      - name: Render the production .env
+        env:
+          WEB_ENABLED: ${{ hashFiles('apps/web/package.json') != '' }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+          BRIGHTDATA_UNLOCKER_ZONE: ${{ vars.BRIGHTDATA_UNLOCKER_ZONE }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          GROK_BOT_URL: ${{ vars.GROK_BOT_URL }}
+          ALLOWED_DOMAINS: ${{ vars.ALLOWED_DOMAINS }}
+          WEB_ORIGIN: ${{ vars.WEB_ORIGIN }}
+          SESSION_TTL_HOURS: ${{ vars.SESSION_TTL_HOURS }}
+          SCRAPE_CONCURRENCY: ${{ vars.SCRAPE_CONCURRENCY }}
+          MAX_PRODUCT_PAGES: ${{ vars.MAX_PRODUCT_PAGES }}
+          SCRAPE_MONTHLY_MAX: ${{ vars.SCRAPE_MONTHLY_MAX }}
+          JEV_MONTHLY_BUDGET_USD: ${{ vars.JEV_MONTHLY_BUDGET_USD }}
+          IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        run: bash deploy/render-env.sh .env.new
+
+      # Only compose files, the Caddyfile, the two scripts and the new .env travel.
+      # Everything else is in the images, so the box never holds a checkout that could drift.
+      - name: Copy the deploy files
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/compose.yml,deploy/compose.web.yml,deploy/compose.tunnel.yml,deploy/caddy/Caddyfile,deploy/remote-deploy.sh,deploy/smoke.sh,.env.new
+          target: ${{ vars.VPS_APP_DIR }}
+          overwrite: true
+
+      - name: Pull and restart
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: IMAGE_TAG
+          script: |
+            set -euo pipefail
+            cd "${{ vars.VPS_APP_DIR }}"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            bash deploy/remote-deploy.sh "$IMAGE_TAG"
+            docker logout ghcr.io
+
+      - name: Smoke test
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: bash "${{ vars.VPS_APP_DIR }}/deploy/smoke.sh"
+
+      - name: Remove the rendered .env from the runner
+        if: always()
+        run: rm -f .env.new

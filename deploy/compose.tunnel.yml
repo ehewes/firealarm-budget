@@ -1,0 +1,19 @@
+# This project's own Cloudflare tunnel (token-based; the hostname route lives in the Zero
+# Trust dashboard: go.edenmatrix.xyz -> http://caddy:80). An override file rather than a
+# profile, because COMPOSE_PROFILES in .env is ignored by `--env-file`.
+services:
+  cloudflared:
+    # Pinned: `latest` changed under the other stacks more than once.
+    image: cloudflare/cloudflared:2026.7.3
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is not set}
+    depends_on:
+      - caddy
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
