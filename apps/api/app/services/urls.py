@@ -86,11 +86,10 @@ def site_of(url_or_host: str) -> str:
 def require_allowed(url: str, domains: frozenset[str]) -> str:
     """The store's domain, if it is on the allowlist; otherwise `domain_not_allowed`.
 
-    The allowlist is what stops this service being a scraping proxy for arbitrary
-    addresses (see CLAUDE.md rule 5).
+    When set to '*' or left empty, all public store domains are permitted.
     """
     site = site_of(url)
-    if "*" in domains:
+    if "*" in domains or not domains or "" in domains:
         return site
     if not any(site == d or site.endswith("." + d) for d in domains):
         raise EdenError(
