@@ -35,7 +35,7 @@ supabase db push
 2. **Nothing is purchased without a confirmed `purchase_intent`**, confirmed by the signed-in owner (`is_anonymous = false`) via the Eden confirm page. No endpoint callable with just a session code may spend money.
 3. **Prices, titles and images shown to users come from the database**, never from model-generated text.
 4. **Re-check price and stock before issuing a card.** On change → `409 price_changed`, require re-confirmation.
-5. **Only scrape allowlisted domains** (`ALLOWED_DOMAINS`). Never fetch arbitrary user-supplied URLs.
+5. **Scrape public store pages only, and in production only through Bright Data** (never directly from our servers; `DIRECT_FETCH` is for local development and the API refuses to start with it in production). `ALLOWED_DOMAINS` restricts which stores; `*` (production today) allows any store. Rate limits and the monthly scrape cap always apply. A page with no readable products fails; never fill in placeholder products.
 6. **Service role key, Bright Data, Jev, Grok and card keys live only in `apps/api`.** The web app uses the anon key and `NEXT_PUBLIC_*` vars only.
 7. **Rules are applied server-side** in the products endpoint, not left to Grok.
 

@@ -44,7 +44,7 @@ After changing a runtime secret, redeploy (re-run the latest deploy workflow) so
 | `VPS_HOST`, `VPS_USER`, `VPS_APP_DIR` | `100.102.111.88`, `deploy`, `/opt/firealarm-budget` | CI |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` | api |
 | `WEB_ORIGIN` | `https://go.edenmatrix.xyz` | api (links, CORS) |
-| `ALLOWED_DOMAINS` | `joinfleek.com` | api: the only stores it will scrape |
+| `ALLOWED_DOMAINS` | `*` | api: which stores it will scrape; `*` means any store, or give a comma-separated list |
 | `BRIGHTDATA_UNLOCKER_ZONE` | the zone name | api |
 | `SESSION_TTL_HOURS` | `24` | api |
 | `SCRAPE_CONCURRENCY` | `8` | api |

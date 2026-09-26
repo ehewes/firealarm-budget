@@ -191,6 +191,24 @@ details the reference leaves open.
   3. `classifying`: Jev places each product in the fixed tree, level by level: category, then type, then tier
      (`premium` or `standard`). When Jev is unsure, the keyword placement stays.
   4. `ready`.
+- **Any store, not just Fleek** (`services/extract.py`, `services/scraper.py`), in this order:
+  1. Product lists in the page's own data: `__NEXT_DATA__`, JSON-LD, JSON script tags, and objects that inline
+     scripts assign (`window.zara.viewPayload = {…}`). Prices in minor units are divided when the page declares
+     two decimals, as Zara does.
+  2. Each data item is matched to the store's own product link by an ID, a reference or its title words, so its
+     URL is the real one.
+  3. Every product-looking link the data didn't cover. Shapes include Shopify `/products/`, Zara `-p123.html`,
+     H&M, ASOS, eBay, Etsy, Nike, and slug-plus-id URLs. Titles come from image alt text, and prices printed in
+     the tile are picked up.
+  4. If that still finds fewer than 3 products, **Jev judges the page's links**, a dozen per call, and the ones
+     it says open a single product become items.
+  5. Product pages are fetched unpriced items first. They fill in price, currency, stock, image and a cleaner
+     title from JSON-LD or `product:price` meta tags.
+
+  A single retail item counts as one piece, so per-piece rules work on ordinary shops too. Pages up to 15 MB are
+  read (Zara's is about 3 MB), but only pages under 2.5 MB are cached. A tile price is read only from the product's
+  own card, never from a level that also holds another product. If nothing on the page is a product, the scrape
+  fails with that reason. Nothing is ever made up to fill the gap.
 - **Tree:** the fixed taxonomy lives in `services/taxonomy.py`: tops, bottoms, outerwear, dresses, footwear,
   accessories, mixed, each with its types.
 - **Rules** (`services/rules.py`) are applied in code. A product that can't be checked against a hard filter

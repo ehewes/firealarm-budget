@@ -21,7 +21,11 @@ from app.config import Settings
 from app.services import usage
 
 UNLOCKER_URL = "https://api.brightdata.com/request"
-MAX_HTML = 2_000_000  # a page bigger than this is not a store page we can use
+# Big retailers ship multi-megabyte pages (Zara's is ~3 MB of inline data), so the fetch
+# cap is generous, but only pages under CACHE_MAX go into page_cache: the free Supabase
+# tier holds 500 MB and a handful of these would fill it.
+MAX_HTML = 15_000_000
+CACHE_MAX = 2_500_000
 
 # A 200 that is a bot check, not the page. Matched on the opening bytes only: a real page
 # can mention these words further down.
@@ -183,14 +187,15 @@ async def get_page(
         raise BudgetExhausted("this month's scrape budget is spent")
     await usage.add(db, usage.SCRAPES, 1)
     html = await fetcher.fetch(url)
-    await (
-        db.table("page_cache")
-        .upsert(
-            {"url": url, "html": html, "fetched_at": datetime.now(UTC).isoformat()},
-            on_conflict="url",
+    if len(html) <= CACHE_MAX:
+        await (
+            db.table("page_cache")
+            .upsert(
+                {"url": url, "html": html, "fetched_at": datetime.now(UTC).isoformat()},
+                on_conflict="url",
+            )
+            .execute()
         )
-        .execute()
-    )
     return html
 
 
