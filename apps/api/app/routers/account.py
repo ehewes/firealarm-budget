@@ -112,6 +112,7 @@ async def connect_agent(
                 "eden-matrix": {"url": url, "headers": {"Authorization": f"Bearer {token}"}}
             }
         },
+        connector_url=f"{url}?key={token}",
     )
 
 

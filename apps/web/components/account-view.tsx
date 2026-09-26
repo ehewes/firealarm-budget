@@ -223,12 +223,31 @@ export function AccountView() {
 
       {signedIn && (
         <section className={card}>
-          <h2 className="text-lg font-semibold">Connect Grok Bot</h2>
+          <h2 className="text-lg font-semibold">Connect Grok</h2>
           <p className="text-sm text-zinc-500">
-            Gives your Grok Bot the Eden Matrix tools over MCP: it can list your past sessions, read any
-            session&apos;s shortlist, start new ones, and ask to buy with your agent card.
+            Gives Grok the Eden Matrix tools over MCP: it can list your past sessions, read any session&apos;s
+            shortlist, start new ones, and ask to buy with your agent card.
           </p>
-          {created ? (
+          {created?.name === "Grok" ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm">
+                On grok.com, open{" "}
+                <a href="https://grok.com/connectors" target="_blank" rel="noopener" className="underline">
+                  Connectors
+                </a>
+                , click New Connector, choose Custom and paste this URL. It holds your token, so keep it to yourself;
+                it&apos;s shown only once.
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-zinc-100 p-3 text-xs break-all whitespace-pre-wrap dark:bg-zinc-900">
+                {created.connector_url}
+              </pre>
+              <Copy text={created.connector_url} label="Copy the URL" />
+              <p className="text-sm text-zinc-500">
+                Then, in any Grok chat (Continue in Grok included), ask: &ldquo;What have I been shopping for on
+                Eden?&rdquo;
+              </p>
+            </div>
+          ) : created ? (
             <div className="flex flex-col gap-2">
               <p className="text-sm">
                 In Grok Bot, open the MCP servers settings, add a server by JSON and paste this. The token is shown
@@ -243,17 +262,36 @@ export function AccountView() {
               </p>
             </div>
           ) : (
-            <button
-              type="button"
-              className={primary}
-              disabled={busy}
-              onClick={() =>
-                act(async () => {
-                  setCreated(await account.connectAgent(token!, "Grok Bot"));
-                })
-              }
-            >
-              Connect Grok Bot
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className={primary}
+                disabled={busy}
+                onClick={() =>
+                  act(async () => {
+                    setCreated(await account.connectAgent(token!, "Grok"));
+                  })
+                }
+              >
+                Connect Grok (grok.com)
+              </button>
+              <button
+                type="button"
+                className={primary}
+                disabled={busy}
+                onClick={() =>
+                  act(async () => {
+                    setCreated(await account.connectAgent(token!, "Grok Bot"));
+                  })
+                }
+              >
+                Connect Grok Bot
+              </button>
+            </div>
+          )}
+          {created && (
+            <button type="button" className={quiet} onClick={() => setCreated(null)}>
+              Connect another
             </button>
           )}
           {me.agents.length > 0 && (

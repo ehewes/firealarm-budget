@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from app.config import Settings
@@ -108,3 +110,14 @@ def test_grok_bot_prompt_keeps_a_session_log_on_the_bots_computer():
     assert "https://go.edenmatrix.xyz/v1/sessions/EM-7K2Q9X4M/products" in prompt
     assert "/workspace/eden-matrix/sessions.md" in prompt
     assert "https://go.edenmatrix.xyz/s/EM-7K2Q9X4M" in prompt and "list_my_sessions" in prompt
+
+
+def test_agent_tokens_never_reach_the_access_log():
+    from app.__main__ import _RedactAgentTokens
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s"', ("1.2.3.4", "POST", ""), None
+    )
+    record.args = ("1.2.3.4", "POST", "/v1/mcp?key=em_agent_abc-DEF_123")
+    _RedactAgentTokens().filter(record)
+    assert record.getMessage() == '1.2.3.4 - "POST /v1/mcp?key=em_agent_[redacted]"'
