@@ -1,6 +1,6 @@
 # Database
 
-Hosted Supabase (Postgres 17). The data model is described in [PLAN.md](PLAN.md) (Data model); this page is
+Hosted Supabase (Postgres 17). The data model is described in [ARCHITECTURE.md](ARCHITECTURE.md) (Data model); this page is
 about how the schema changes and what each migration added.
 
 ## Migrations
