@@ -1,7 +1,7 @@
 """Creating and loading sessions.
 
 A session is a read-only capability: its code appears in chat, so it can read one
-session's data but never authorise spending (see PLAN.md). Scrapes are shared: the
+session's data but never authorise spending (see docs/ARCHITECTURE.md). Scrapes are shared: the
 same store page scraped in the last SCRAPE_FRESH_MINUTES is reused by every session
 that asks for it, which is what makes rules cheap query-time filters.
 """
