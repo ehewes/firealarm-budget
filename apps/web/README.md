@@ -7,7 +7,7 @@ on the same host.
 | --- | --- |
 | `/` | What Eden Matrix is, plus a box to paste a store URL |
 | `/<store-url>` | The prefix route: signs the visitor in (anonymously if new), `POST /v1/sessions`, then goes to `/s/<code>` |
-| `/s/<code>` | Live status and category tree while the scrape runs, then **Continue in Grok** and the cheapest items |
+| `/s/<code>` | Live status and category tree while the scrape runs, then the handoff and the cheapest items. On desktops, **Open in Grok Bot** copies the prompt and opens the app (`grokbot://app/v1/open`, which can't carry a prompt itself). **Continue in Grok** opens grok.com with the prompt filled in |
 
 ```sh
 npm install

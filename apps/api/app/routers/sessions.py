@@ -28,7 +28,7 @@ from app.models import (
 from app.services import rules as rule_engine
 from app.services.extract import parse_product
 from app.services.fetch import BudgetExhausted, FetchError, get_page
-from app.services.grok import grok_url
+from app.services.grok import grok_prompt, grok_url
 from app.services.jev import DecideError, Unavailable
 from app.services.scraper import run_scrape
 from app.services.sessions import can_purchase, create_session, load_session
@@ -312,9 +312,10 @@ async def refresh_product(
 async def grok_link(
     code: str, db: AsyncClient = Depends(get_db), settings: Settings = Depends(get_settings)
 ) -> JSONResponse:
-    """The Continue to Grok link, rebuilt with the collection name once the scrape has one."""
+    """The Continue to Grok link, rebuilt with the collection name once the scrape has one, and
+    its prompt on its own for Grok Bot, whose app links can't carry one."""
     session, scrape = await load_session(db, code)
-    url = grok_url(
-        settings, code=session["code"], store=scrape["domain"], collection=scrape.get("title")
+    where = {"code": session["code"], "store": scrape["domain"], "collection": scrape.get("title")}
+    return JSONResponse(
+        {"grok_url": grok_url(settings, **where), "prompt": grok_prompt(settings, **where)}
     )
-    return JSONResponse({"grok_url": url})

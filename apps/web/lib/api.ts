@@ -76,7 +76,7 @@ export const api = {
   tree: (code: string) => request<{ tree: TreeNode[] }>(`/sessions/${code}/tree`),
   products: (code: string, limit = 12) =>
     request<{ items: Product[]; total_matching: number }>(`/sessions/${code}/products?limit=${limit}`),
-  grok: (code: string) => request<{ grok_url: string }>(`/sessions/${code}/grok`),
+  grok: (code: string) => request<{ grok_url: string; prompt: string }>(`/sessions/${code}/grok`),
 };
 
 export const productsUrl = (code: string) => `${API_URL}/sessions/${code}/products`;

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { api, type Product, productsUrl, type Session, type TreeNode } from "@/lib/api";
+import { GROK_BOT_APP_URL, GROK_BOT_DOWNLOAD_URL } from "@/lib/config";
 
 const STATUS: Record<Session["status"], string> = {
   pending: "Queued…",
@@ -12,6 +13,19 @@ const STATUS: Record<Session["status"], string> = {
   ready: "Ready",
   failed: "We couldn't read that page",
 };
+
+type Desktop = "mac" | "windows" | "linux" | null;
+
+/** The desktop Grok Bot runs on, if this is one. iPads report themselves as Macs, but have touch. */
+function desktop(): Desktop {
+  const ua = navigator.userAgent;
+  if (/Macintosh/.test(ua)) return navigator.maxTouchPoints > 1 ? null : "mac";
+  if (/Windows/.test(ua)) return "windows";
+  if (/Linux/.test(ua) && !/Android/.test(ua)) return "linux";
+  return null;
+}
+
+const unchanging = () => () => {};
 
 /** The scrape's reason for failing, as a sentence a shopper can act on. */
 function failure(reason: string | null): string {
@@ -38,7 +52,11 @@ export function SessionView({ code }: { code: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [grokUrl, setGrokUrl] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [copied, setCopied] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Read after hydration: the server can't know the visitor's platform.
+  const platform = useSyncExternalStore(unchanging, desktop, () => null);
 
   useEffect(() => {
     let stopped = false;
@@ -59,6 +77,7 @@ export function SessionView({ code }: { code: string }) {
             setProducts(p.items);
             setTotal(p.total_matching);
             setGrokUrl(g.grok_url);
+            setPrompt(g.prompt);
           }
           return;
         }
@@ -88,6 +107,16 @@ export function SessionView({ code }: { code: string }) {
   }
 
   const ready = session?.status === "ready";
+  const button = "inline-flex w-fit items-center gap-2 rounded-full px-6 py-3 text-base font-medium";
+  const primary = "bg-black text-white dark:bg-white dark:text-black";
+  const secondary = "border border-zinc-300 dark:border-zinc-700";
+  const waiting = "pointer-events-none bg-zinc-200 text-zinc-500 dark:bg-zinc-800";
+
+  // The link itself opens the app, so the browser sees the click; the copy starts in the same click.
+  const copyPrompt = () => {
+    if (prompt) navigator.clipboard.writeText(prompt).then(() => setCopied(true), () => setCopied(false));
+  };
+
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-6 py-10">
       <header className="flex flex-col gap-2">
@@ -107,17 +136,41 @@ export function SessionView({ code }: { code: string }) {
       </header>
 
       <section className="flex flex-col gap-3 rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
-        <a
-          href={grokUrl ?? undefined}
-          target="_blank"
-          rel="noopener"
-          aria-disabled={!grokUrl}
-          className={`inline-flex w-fit items-center gap-2 rounded-full px-6 py-3 text-base font-medium ${
-            grokUrl ? "bg-black text-white dark:bg-white dark:text-black" : "pointer-events-none bg-zinc-200 text-zinc-500 dark:bg-zinc-800"
-          }`}
-        >
-          Continue in Grok
-        </a>
+        <div className="flex flex-wrap items-center gap-3">
+          {platform && (
+            <a
+              href={prompt ? GROK_BOT_APP_URL : undefined}
+              onClick={copyPrompt}
+              aria-disabled={!prompt}
+              className={`${button} ${prompt ? primary : waiting}`}
+            >
+              Open in Grok Bot
+            </a>
+          )}
+          <a
+            href={grokUrl ?? undefined}
+            target="_blank"
+            rel="noopener"
+            aria-disabled={!grokUrl}
+            className={`${button} ${!grokUrl ? waiting : platform ? secondary : primary}`}
+          >
+            Continue in Grok
+          </a>
+        </div>
+        {copied === true && (
+          <p className="text-sm">
+            Prompt copied. Paste it into a new Grok Bot task ({platform === "mac" ? "⌘V" : "Ctrl+V"}). No Grok Bot yet?{" "}
+            <a href={GROK_BOT_DOWNLOAD_URL} target="_blank" rel="noopener" className="underline">
+              Download it
+            </a>
+          </p>
+        )}
+        {copied === false && prompt && (
+          <div className="flex flex-col gap-1 text-sm">
+            <p>Your browser wouldn&apos;t let us copy the prompt. Copy it from here and paste it into Grok Bot:</p>
+            <textarea readOnly value={prompt} rows={4} className="w-full rounded-lg border border-zinc-300 p-2 font-mono text-xs dark:border-zinc-700" />
+          </div>
+        )}
         <p className="text-sm text-zinc-500">
           {ready
             ? "Grok opens with this session and reads the shortlist straight from the Eden API."
