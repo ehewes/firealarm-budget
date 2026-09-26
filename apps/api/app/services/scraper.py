@@ -19,7 +19,7 @@ from supabase import AsyncClient
 
 from app.config import Settings
 from app.services import taxonomy
-from app.services.extract import Item, parse_listing, parse_product
+from app.services.extract import Item, candidate_links, parse_listing, parse_product
 from app.services.fetch import BudgetExhausted, Fetcher, FetchError, get_page, prune_page_cache
 from app.services.jev import DecideError, Jev, Unavailable
 
@@ -67,7 +67,11 @@ async def run_scrape(
         await _update(db, scrape_id, status="crawling", updated_at=_now())
         await prune_page_cache(db, settings)
 
-        listing = parse_listing(await get_page(db, fetcher, settings, url), url)
+        html = await get_page(db, fetcher, settings, url)
+        listing = parse_listing(html, url)
+        if len(listing.items) < 3:
+            # No page data and no known product-URL shape: let Jev judge the page's links.
+            listing.items += await _jev_products(jev, html, url, listing.title, listing.items)
         if not listing.items:
             raise FetchError("no products were found on that page")
         rows = [_product_row(scrape_id, item) for item in listing.items]
@@ -76,7 +80,9 @@ async def run_scrape(
             db, scrape_id, title=listing.title, product_count=len(rows), updated_at=_now()
         )
 
-        await _enrich(db, settings, fetcher, scrape_id, listing.items[: settings.max_product_pages])
+        # Items the listing couldn't price first: their product page is where the price is.
+        queue = sorted(listing.items, key=lambda item: item.price is not None)
+        await _enrich(db, settings, fetcher, scrape_id, queue[: settings.max_product_pages])
 
         await _update(db, scrape_id, status="classifying", updated_at=_now())
         await _classify(db, jev, scrape_id)
@@ -126,8 +132,15 @@ async def _enrich(
         }
         if item.price is None and page.price is not None:
             update["price"] = page.price
+            update["per_piece"] = round(page.price / item.pieces, 2) if item.pieces else page.price
+            update["currency"] = item.currency or page.currency
         if page.in_stock is not None:
             update["in_stock"] = page.in_stock
+        if not item.image_url and page.image:
+            update["image_url"] = page.image
+        # The product page's own name beats a title recovered from a link's slug or alt text.
+        if page.title and (len(item.title) < 6 or " " not in item.title.strip()):
+            update["title"] = page.title
         await (
             db.table("products")
             .update(update)
@@ -137,6 +150,36 @@ async def _enrich(
         )
 
     await asyncio.gather(*(one(item) for item in items))
+
+
+async def _jev_products(
+    jev: Jev, html: str, url: str, title: str | None, known: list[Item]
+) -> list[Item]:
+    """Products found by asking Jev which of the page's links open a single product.
+
+    The fallback for stores whose URLs match no known product shape. Costs one small Jev
+    call per dozen links, and nothing when Jev is unavailable or over budget.
+    """
+    if not jev.configured:
+        return []
+    have = {item.source_url for item in known}
+    candidates = [(u, t) for u, t in candidate_links(html, url) if u not in have]
+    try:
+        verdicts = await jev.product_links(title or url, candidates)
+    except (Unavailable, DecideError) as exc:
+        logger.info("Jev could not judge the links on %s: %s", url, exc)
+        return []
+    found = []
+    for link_url, link_title in candidates:
+        if verdicts.get(link_url, 0.0) >= 0.5:
+            found.append(
+                Item(
+                    title=link_title,
+                    source_url=link_url,
+                    attrs={"position": len(known) + len(found), "found_by": "jev"},
+                )
+            )
+    return found
 
 
 async def _classify(db: AsyncClient, jev: Jev, scrape_id: str) -> None:

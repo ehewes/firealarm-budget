@@ -20,6 +20,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from supabase import AsyncClient
@@ -154,6 +155,42 @@ class Jev:
         if kind is None or kind.confidence < MIN_CHOICE_CONFIDENCE:
             return None
         return category.chosen, kind.chosen
+
+    async def product_links(self, page: str, links: list[tuple[str, str]]) -> dict[str, float]:
+        """Probability, per link, that it opens the page of one specific product for sale.
+
+        A dozen links per request: the state is only the page title and those links, so
+        each yes/no question is answerable from what Jev can see.
+        """
+        verdicts: dict[str, float] = {}
+        for start in range(0, len(links), 12):
+            batch = links[start : start + 12]
+            state = {
+                "page": page[:200],
+                "links": [
+                    {"id": f"L{n}", "text": text[:120], "path": urlsplit(url).path[:160]}
+                    for n, (url, text) in enumerate(batch)
+                ],
+            }
+            questions = {
+                f"L{n}": {
+                    "type": "noul",
+                    "instructions": (
+                        f"Look at link L{n} in the state. Does it open the page of one specific "
+                        "product that a shopper could buy? Judge only from its text and path."
+                    ),
+                    "criteria": {
+                        "true": "It opens a single product: one item with its own page.",
+                        "false": "It opens a category, collection, brand, search, account, cart, "
+                        "help or marketing page, or anything that is not one product.",
+                    },
+                }
+                for n in range(len(batch))
+            }
+            decision = await self.decide(state, questions)
+            for n, (url, _) in enumerate(batch):
+                verdicts[url] = decision.nouls.get(f"L{n}", 0.0)
+        return verdicts
 
     async def fits_notes(self, notes: list[str], title: str, details: str = "") -> float:
         """Probability that the item fits the shopper's free-text preferences."""

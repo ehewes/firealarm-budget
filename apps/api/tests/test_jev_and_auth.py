@@ -116,3 +116,23 @@ def test_es256_via_jwks_and_no_secret_for_hs256():
     assert verifier.verify(jwt.encode(_claims(), private, algorithm="ES256")).id == "user-1"
     with pytest.raises(AuthError):  # HS256 is refused when no secret is configured
         verifier.verify(jwt.encode(_claims(), "x" * 40, algorithm="HS256"))
+
+
+async def test_jev_judges_links_in_batches(free_budget):
+    seen_batches = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen_batches.append(len(body["questions"]))
+        answers = {
+            key: {"type": "noul", "noul": 0.9 if "linen" in link["text"].lower() else 0.1}
+            for key, link in zip(body["questions"], body["state"]["links"], strict=True)
+        }
+        return httpx.Response(200, json={"answers": answers, "usage": {"cost": 0.00002}})
+
+    links = [
+        (f"https://s.example/x{i}", f"Linen shirt {i}" if i % 2 else f"Sale {i}") for i in range(14)
+    ]
+    verdicts = await _jev(handler).product_links("Shirts", links)
+    assert seen_batches == [12, 2]
+    assert verdicts["https://s.example/x1"] == 0.9 and verdicts["https://s.example/x2"] == 0.1
