@@ -44,6 +44,9 @@ def test_prefix_to_scrape_to_tree_to_products(make_client):
     ]  # everything at or under $14/pc, cheapest per piece first
     assert products["items"][0]["why"] == "$8.00/pc under your $14.00 cap"
     assert products["total_matching"] == 3
+    grok = client.get(f"/v1/sessions/{code}/grok").json()
+    assert grok["prompt"].startswith("I'm shopping April EOM RL Drop on joinfleek.com.")
+    assert f"https://go.example.test/v1/sessions/{code}/products" in grok["prompt"]
     picks = db.execute("select count(*) as n from public.session_picks").fetchone()["n"]
     assert picks == 3
 

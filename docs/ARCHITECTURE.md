@@ -104,5 +104,12 @@ FastAPI uses the service role key and bypasses RLS; it enforces ownership itself
 ## Open questions
 
 - **Grok Bot handoff:** deep link with prefilled message? URL params? How does it register external HTTP tools (OpenAPI import, custom functions, MCP only)? → ask sponsor team first thing.
+  - *Partly answered 2026-09-26*, from the installed app (v0.59.1, `Info.plist` and `app.asar`).
+  - It registers `grokbot://` (and `sand://`). The routes are `app/v1/open`, `app/v1/agent?id=`,
+    `app/v1/bot-template?id=`, marketplace, plugins and settings. None of them carries a prompt.
+  - So the session page's **Open in Grok Bot** copies the prompt, then opens `grokbot://app/v1/open`, and the
+    shopper pastes the prompt in. **Continue in Grok** (`grok.com/?q=`) stays for the web and phones.
+  - The app connects to remote MCP servers with OAuth (its callback is `grokbot://mcp/oauth/callback`). That is
+    the way to give it tools.
 - **Checkout on Fleek:** account, cart and possible 3-D Secure; real money. → ask Fleek about a test account; otherwise demo purchase on our Shopify dev store.
 - **Agent card sandbox:** does the provider offer test mode?
