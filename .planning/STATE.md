@@ -39,7 +39,6 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 - Init: Grok-facing reads are plain unauthenticated GETs; `/brief` endpoint added to Phase 1 (API-08, API-09).
-- Init: Fetcher behind `fetch(url) -> html` interface with fixture fallback so API work is not blocked by teammate's Bright Data / Cloudflare Tunnel setup.
 
 ### Pending Todos
 
@@ -48,9 +47,10 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- Grok handoff plan: prefill link (`grok.com/?q=...`, format unconfirmed) carrying the `/brief` URL. Unverified that Grok's browsing fetches our URL — 5-min test: paste a public JSON URL into Grok. If it fails, ask sponsor about tool registration / MCP.
-- Cloudflare Bot Fight Mode / WAF challenge must be off for the API hostname, and tunnel must use a stable named hostname (teammate's infra).
-- Ownership boundary with teammate's infra agent: agree who owns `app/services/scraper.py` and `.env`.
+- Grok handoff: prefill link already built in `apps/api/app/services/grok.py` (points at `/products` JSON). Plan: switch it to `/brief`. Unverified that Grok's browsing fetches our URL — 5-min test: paste a public JSON URL into Grok. If it fails, ask sponsor about tool registration / MCP.
+- Cloudflare Bot Fight Mode / WAF challenge must be off for the API hostname, Tunnel hostname is `go.edenmatrix.xyz` (web at `/`, API at `/v1`).
+- Teammate's commit 263f9b6 already implements most of Phase 1 backend (sessions, scrape via Bright Data, Jev tree, products/tree/detail/refresh, rules, rulesets, rate limits, spend caps). Phase 1 planning must start from the existing code: remaining work is `apps/web` (prefix route + live tree), `/brief`, and `Cache-Control: no-store`. Rules/parse (RULE-01, RULE-03) are also done.
+- Never push to `main`; open a PR (CLAUDE.md infra rules).
 
 ## Deferred Items
 

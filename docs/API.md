@@ -67,7 +67,7 @@ Create a session and start scraping (returns before the scrape finishes).
 
 ### `GET /sessions/{code}/brief`
 
-Entry point for Grok. The "Continue to Grok" button opens a Grok prefill link whose message contains this URL, and Grok reads it with its browsing tool. Returns `text/markdown`: store, collection, rules, scrape status, the top picks with `why`, and links to filtered `/products` URLs for digging further. While the scrape is still `crawling`, it returns whatever products are ready plus a retry hint.
+**Proposed, not yet implemented.** Entry point for Grok. The "Continue to Grok" link (`services/grok.py`) currently points Grok at `/products`; the plan is to point it here instead. The prefill message contains this URL, and Grok reads it with its browsing tool. Returns `text/markdown`: store, collection, rules, scrape status, the top picks with `why`, and links to filtered `/products` URLs for digging further. While the scrape is still `crawling`, it returns whatever products are ready plus a retry hint.
 
 ```
 # Eden session EM-7K2Q9X4M — joinfleek.com / Nike Vintage Wholesale
@@ -77,8 +77,8 @@ Status: ready · 25 products · rules: max $14/pc, premium only
    Why: Premium grade; $12.78/pc under your $14 cap
    https://www.joinfleek.com/products/…
 
-More: https://api.edenmatrix.com/v1/sessions/EM-7K2Q9X4M/products?category=bottoms
-Session page: https://www.edenmatrix.com/s/EM-7K2Q9X4M
+More: https://go.edenmatrix.xyz/v1/sessions/EM-7K2Q9X4M/products?category=bottoms
+Session page: https://go.edenmatrix.xyz/s/EM-7K2Q9X4M
 ```
 
 All Grok-facing endpoints (`/brief`, `GET /sessions/{code}`, `/tree`, `/products`, `/products/{id}`) are plain `GET`s with the code in the path, need no auth header, and send `Cache-Control: no-store`, so a browsing tool can read them.

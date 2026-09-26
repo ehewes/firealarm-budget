@@ -37,8 +37,8 @@ Prefixing a store URL produces a live category tree and a rules-filtered, ranked
 ## Context
 
 - Specs already written: `docs/ARCHITECTURE.md`, `docs/API.md`, `supabase/migrations/0001_init.sql`.
-- No application code yet: `apps/api` and `apps/web` do not exist.
-- Team split: a teammate's agent is setting up infra in parallel — Cloudflare Tunnel (public URL for the local API so Grok Bot can reach it) and the Bright Data Web Unlocker zone. Code under `apps/` must not depend on that infra to make progress: fetching goes behind one `fetch(url) -> html` interface with a fixture fallback.
+- `apps/api` exists (teammate, commit 263f9b6): most of the Phase 1 backend plus rules parsing/filtering. `apps/web` does not exist yet.
+- Infra (teammate): team VPS behind Cloudflare Tunnel at `https://go.edenmatrix.xyz` (web at `/`, API at `/v1`), secrets in GitHub, deploy from `main` via CI. See `docs/DEPLOYMENT.md`, `docs/SECRETS.md`, `docs/LOCAL_DEV.md`.
 - Sponsors / services: Bright Data (fetching), Jev (typed Choice/Score classification + ranking), Grok API (extraction, rule parsing), Grok Bot (conversational agent), agent card provider (stretch).
 
 ## Constraints
@@ -55,7 +55,6 @@ Architecture decisions (REST not MCP, rules server-side, anonymous auth, session
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Fetcher behind interface with fixture fallback | Unblocks API work while Bright Data/tunnel infra is set up by teammate | — Pending |
 | Grok handoff via prefill link + GET-only `/brief` endpoint | Prefill only puts text in chat; Grok reads our data with its browsing tool, so reads must be unauthenticated GETs | — Pending |
 | Lean GSD: no research agents, coarse phases | Specs already exist; hackathon time budget | — Pending |
 
