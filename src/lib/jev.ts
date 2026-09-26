@@ -5,7 +5,16 @@
  * - `choice`: Selects from discrete criteria with calibrated probabilities (variant resolution)
  * - `noul`: Evaluates boolean assertions with true-probability (margin & risk gates)
  * - `score`: Evaluates ordinal rating scales
+ *
+ * Built-in Support:
+ * - Configurable Seller & Buyer business rules
+ * - Calibrated confidence tracking
+ * - Automatic Grok System-2 Cascade triggers (when confidence < threshold)
  */
+
+export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
+export const DEFAULT_JEV_MODEL = "typesafe/jev-1.13";
+const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 
 export type JevQuestionChoice = {
   type: "choice";
@@ -54,8 +63,24 @@ export interface JevResponse {
   };
 }
 
-const DEFAULT_JEV_MODEL = "typesafe/jev-1.13";
-const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+export interface CascadeMetadata {
+  confidence: number;
+  confidenceThreshold: number;
+  shouldEscalateToGrok: boolean;
+  escalationReason?: string;
+}
+
+/**
+ * Seller Business Rules configuration
+ */
+export interface SellerPolicyRules {
+  maxDiscountPct?: number; // e.g. 15%
+  minStockForDiscount?: number; // e.g. don't discount if stock < 5
+  bulkMinQuantity?: number; // e.g. 3+ items
+  bulkExtraDiscountPct?: number; // e.g. extra 5%
+  allowClearanceDiscounts?: boolean;
+  customRules?: string[];
+}
 
 /**
  * Executes a raw System-1 Decision request via OpenRouter Jev
@@ -134,35 +159,52 @@ export async function executeJevDecisions(
 }
 
 /**
- * 1. Variant Resolution Primitive (Choice)
- * Resolves natural language user intent against raw variant options with zero hallucination.
+ * 1. Variant Resolution Primitive (Choice) with Model Cascading
+ * Resolves natural language user intent against raw variant options.
+ * Flags Grok escalation if intent is ambiguous or top confidence < threshold.
  */
 export async function resolveVariant(params: {
   userIntent: string;
   productTitle: string;
-  variants: Array<{ id: string | number; title: string; price?: string | number; available?: boolean }>;
+  variants: Array<{
+    id: string | number;
+    title: string;
+    price?: string | number;
+    available?: boolean;
+    inventoryQuantity?: number;
+  }>;
+  confidenceThreshold?: number;
 }): Promise<{
   variantId: string;
   confidence: number;
   distribution?: Record<string, number>;
   latencyMs: number;
+  cascade: CascadeMetadata;
 }> {
+  const threshold = params.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
   const criteria: Record<string, string> = {};
+
   for (const v of params.variants) {
-    const stock = v.available === false ? " (Out of Stock)" : " (In Stock)";
-    criteria[String(v.id)] = `${v.title}${v.price ? ` - $${v.price}` : ""}${stock}`;
+    const stockStatus =
+      v.available === false || v.inventoryQuantity === 0
+        ? " (Out of Stock)"
+        : v.inventoryQuantity !== undefined
+        ? ` (In Stock: ${v.inventoryQuantity})`
+        : " (In Stock)";
+    criteria[String(v.id)] = `${v.title}${v.price ? ` - $${v.price}` : ""}${stockStatus}`;
   }
 
   const result = await executeJevDecisions({
     state: {
       product_title: params.productTitle,
       user_request: params.userIntent,
+      variant_count: params.variants.length,
     },
     questions: {
       selected_variant: {
         type: "choice",
         instructions:
-          "Which variant ID strictly matches the user's requested size, color, style, and availability?",
+          "Which variant ID strictly matches the user's requested size, color, style, and availability? Return the exact matching variant ID.",
         criteria,
       },
     },
@@ -170,99 +212,188 @@ export async function resolveVariant(params: {
 
   const decision = result.decisions.selected_variant;
   const variantId = String(decision.value);
-  const confidence = decision.confidence ?? decision.probability ?? 1.0;
+
+  // Extract calibrated confidence from probability or distribution
+  let confidence = decision.confidence ?? decision.probability ?? 1.0;
+  if (decision.distribution && decision.distribution[variantId] !== undefined) {
+    confidence = decision.distribution[variantId];
+  }
+
+  const shouldEscalateToGrok = confidence < threshold;
+  const escalationReason = shouldEscalateToGrok
+    ? `Low confidence match (${Math.round(confidence * 100)}% < ${Math.round(threshold * 100)}%). Customer intent may be ambiguous or requested variant is unavailable.`
+    : undefined;
 
   return {
     variantId,
     confidence,
     distribution: decision.distribution,
     latencyMs: result.latencyMs,
+    cascade: {
+      confidence,
+      confidenceThreshold: threshold,
+      shouldEscalateToGrok,
+      escalationReason,
+    },
   };
 }
 
 /**
- * 2. Margin Evaluation Engine (Noul / Choice)
- * Evaluates whether an agent's counter-offer bid falls within authorized seller discount policy.
+ * 2. Margin Evaluation Engine (Noul / Choice) with Policy Rules & Cascading
+ * Evaluates whether an agent's counter-offer bid complies with merchant business rules.
  */
 export async function evaluateMargin(params: {
   basePrice: number;
   offeredPrice: number;
   quantity: number;
-  maxDiscountPct?: number;
+  stockRemaining?: number;
+  policy?: SellerPolicyRules;
+  confidenceThreshold?: number;
 }): Promise<{
   acceptable: boolean;
   probability: number;
   discountPct: number;
   latencyMs: number;
+  rulesEvaluated: string[];
+  cascade: CascadeMetadata;
 }> {
-  const maxDiscount = params.maxDiscountPct ?? 15;
-  const unitDiscountPct = ((params.basePrice - params.offeredPrice) / params.basePrice) * 100;
+  const threshold = params.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+  const policy = params.policy || {};
+  const maxDiscount = policy.maxDiscountPct ?? 15;
+  const minStock = policy.minStockForDiscount ?? 5;
+  const bulkQty = policy.bulkMinQuantity ?? 3;
+  const bulkExtra = policy.bulkExtraDiscountPct ?? 5;
+
+  const unitDiscountPct =
+    ((params.basePrice - params.offeredPrice) / params.basePrice) * 100;
+
+  // Build merchant rules summary
+  const rulesEvaluated: string[] = [
+    `Base discount cap: max ${maxDiscount}% off`,
+    `Low stock protection: stock must be >= ${minStock} to allow discount`,
+    `Bulk volume rule: qty >= ${bulkQty} unlocks an additional ${bulkExtra}% discount`,
+    ...(policy.customRules || []),
+  ];
+
+  const statePayload = {
+    base_price_usd: params.basePrice,
+    offered_price_usd: params.offeredPrice,
+    quantity_ordered: params.quantity,
+    stock_remaining: params.stockRemaining ?? 25,
+    unit_discount_pct: Math.round(unitDiscountPct * 10) / 10,
+    max_allowed_discount_pct: maxDiscount,
+    min_stock_required: minStock,
+    bulk_min_quantity: bulkQty,
+    bulk_extra_discount_pct: bulkExtra,
+    policy_rules: rulesEvaluated,
+  };
 
   const result = await executeJevDecisions({
-    state: {
-      base_price_usd: params.basePrice,
-      offered_price_usd: params.offeredPrice,
-      quantity_ordered: params.quantity,
-      max_allowed_discount_pct: maxDiscount,
-      computed_discount_pct: Math.round(unitDiscountPct * 10) / 10,
-    },
+    state: statePayload,
     questions: {
       is_acceptable_margin: {
         type: "noul",
         instructions:
-          "Does this buyer's offer satisfy the seller policy allowing up to the maximum discount percentage for this volume?",
+          "Does this buyer's offer satisfy the seller policy allowing up to the maximum discount percentage, respecting stock thresholds and volume bonuses?",
       },
     },
   });
 
   const decision = result.decisions.is_acceptable_margin;
-  const prob = decision.probability ?? (decision.value === true ? 1.0 : 0.0);
-  const acceptable = prob >= 0.5;
+  const probability = decision.probability ?? (decision.value === true ? 1.0 : 0.0);
+  const acceptable = probability >= 0.5;
+
+  // Confidence is distance from 0.5 (near 0.5 means highly borderline/uncertain)
+  // Normalizing |prob - 0.5| * 2 -> 0 to 1
+  const decisionConfidence = Math.abs(probability - 0.5) * 2;
+  const shouldEscalateToGrok = decisionConfidence < (1 - threshold);
+
+  const escalationReason = shouldEscalateToGrok
+    ? `Borderline negotiation offer (probability: ${Math.round(probability * 100)}%). Escalate to Grok to formulate an intelligent counter-proposal.`
+    : undefined;
 
   return {
     acceptable,
-    probability: prob,
+    probability,
     discountPct: unitDiscountPct,
     latencyMs: result.latencyMs,
+    rulesEvaluated,
+    cascade: {
+      confidence: Math.round(decisionConfidence * 100) / 100,
+      confidenceThreshold: threshold,
+      shouldEscalateToGrok,
+      escalationReason,
+    },
   };
 }
 
 /**
- * 3. Pre-Flight Spend Risk Gate (Noul)
- * Verifies final basket amount against spend caps and policy constraints.
+ * 3. Pre-Flight Spend Risk Gate (Noul) with Cascading
+ * Verifies final basket amount against hard spend caps and safety parameters.
  */
 export async function checkPreFlightRisk(params: {
   basketTotal: number;
   spendCap: number;
   itemCount: number;
   merchantName: string;
+  userPolicy?: string[];
+  confidenceThreshold?: number;
 }): Promise<{
   allowed: boolean;
   probability: number;
   latencyMs: number;
+  cascade: CascadeMetadata;
 }> {
+  const threshold = params.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+
+  // Hard deterministic check first (Layer 1 code defense)
+  if (params.basketTotal > params.spendCap) {
+    return {
+      allowed: false,
+      probability: 0.0,
+      latencyMs: 1,
+      cascade: {
+        confidence: 1.0,
+        confidenceThreshold: threshold,
+        shouldEscalateToGrok: false,
+        escalationReason: undefined,
+      },
+    };
+  }
+
   const result = await executeJevDecisions({
     state: {
       basket_total: params.basketTotal,
       spend_cap: params.spendCap,
       item_count: params.itemCount,
       merchant: params.merchantName,
+      user_policy: params.userPolicy || ["Strict spend cap enforcement", "Legitimate merchant domain"],
     },
     questions: {
       within_budget_policy: {
         type: "noul",
         instructions:
-          "Is the total transaction strictly within the authorized spend cap with safe execution parameters?",
+          "Is the total transaction strictly within authorized limits and compliant with security & spend policies?",
       },
     },
   });
 
   const decision = result.decisions.within_budget_policy;
-  const prob = decision.probability ?? (decision.value === true ? 1.0 : 0.0);
+  const probability = decision.probability ?? (decision.value === true ? 1.0 : 0.0);
+  const confidence = Math.abs(probability - 0.5) * 2;
+  const shouldEscalateToGrok = confidence < (1 - threshold);
 
   return {
-    allowed: prob >= 0.5,
-    probability: prob,
+    allowed: probability >= 0.5,
+    probability,
     latencyMs: result.latencyMs,
+    cascade: {
+      confidence: Math.round(confidence * 100) / 100,
+      confidenceThreshold: threshold,
+      shouldEscalateToGrok,
+      escalationReason: shouldEscalateToGrok
+        ? "Risk boundary uncertain; escalate to Grok for user confirmation."
+        : undefined,
+    },
   };
 }
