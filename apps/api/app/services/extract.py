@@ -27,7 +27,10 @@ _NAME_KEYS = ("title", "name")
 _PRICE_KEYS = ("totalPrice", "price", "pricePerUnit", "offers", "priceRange", "salePrice")
 _ID_KEYS = ("id", "slug", "handle", "url", "redirectUrl", "sku", "productId")
 _PIECE_UNITS = {None, "", "piece", "pieces", "pcs", "pc", "unit", "units", "item", "items"}
-_PRODUCT_PATH = re.compile(r"/(products?|p|item|items|dp|pd|goods)/[^/?#]+/?$", re.IGNORECASE)
+_PRODUCT_PATH = re.compile(
+    r"/(products?|p|item|items|dp|pd|goods)/[^/?#]+/?$|-[pP]\d+(?:\.html)?/?$",
+    re.IGNORECASE,
+)
 _PIECES_IN_TEXT = re.compile(r"\b(\d{1,4})\s*(?:pcs|pieces|pc|units)\b", re.IGNORECASE)
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")

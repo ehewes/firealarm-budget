@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     grok_bot_url: str = "https://grok.com/"
 
     # Only these stores are ever scraped (comma-separated; subdomains included).
-    allowed_domains: str = "joinfleek.com"
+    allowed_domains: str = "joinfleek.com,zara.com"
     # The web app's public origin; also the public API base unless PUBLIC_API_URL is set.
     web_origin: str = "http://localhost:3000"
     public_api_url: str | None = None

@@ -455,7 +455,7 @@ export function createPurchaseIntent(params: {
     card: {
       last4: "4417",
       limit: safeLimit, // Strictly enforces user's max_total cap at the virtual card level
-      merchant: "joinfleek.com",
+      merchant: session?.store || "joinfleek.com",
       expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min expiry
     },
     created_at: new Date().toISOString(),

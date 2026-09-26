@@ -90,6 +90,8 @@ def require_allowed(url: str, domains: frozenset[str]) -> str:
     addresses (see CLAUDE.md rule 5).
     """
     site = site_of(url)
+    if "*" in domains:
+        return site
     if not any(site == d or site.endswith("." + d) for d in domains):
         raise EdenError(
             "domain_not_allowed",
