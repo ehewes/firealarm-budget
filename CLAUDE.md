@@ -6,7 +6,7 @@ Context for AI coding assistants working in this repo. Read this before making c
 
 Eden Matrix: prefix any store URL (`edenmatrix.com/<store-url>`) → we scrape it, classify products into a tree, and expose it through a public REST API that Grok Bot calls to recommend and (for signed-in users) buy within the user's rules. One-day hackathon build — favour working and simple over clever.
 
-Full detail: `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/PLAN.md`.
+Full detail: `docs/ARCHITECTURE.md`, `docs/API.md`. Plan and progress: `.planning/ROADMAP.md`, `.planning/STATE.md`.
 
 ## Layout
 
@@ -80,3 +80,16 @@ Detail: `docs/DEPLOYMENT.md`, `docs/SECRETS.md`, `docs/LOCAL_DEV.md`, `docs/DATA
 - **Migrations are additive:** add `supabase/migrations/000N_*.sql`, never edit an applied one, prove it with `make db-reset`.
 - The VPS is shared with other projects: touch only `/opt/firealarm-budget` and this compose project.
 - `make db` runs local Supabase in Docker (config in `supabase/config.toml`); `make help` lists the rest.
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
