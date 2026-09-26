@@ -1,0 +1,3 @@
+-- Local development seed, applied by `make db` and `make db-reset` (never in production).
+-- Intentionally empty: every row the app needs is created by using it. Add fixtures here
+-- only if a local workflow genuinely needs them.

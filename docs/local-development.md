@@ -37,7 +37,7 @@ monthly caps in your local database just as they do in production.
 
 ## Signing in locally
 
-Local Supabase catches magic-link emails in Inbucket: open `http://127.0.0.1:54324`, click the link, and you
+Local Supabase catches magic-link emails in Mailpit: open `http://127.0.0.1:54324`, click the link, and you
 are signed in at `http://localhost:3000`. Then set a rule on `/account` (for example "only pants") and open a
 new session: only matching items appear in the context.
 
