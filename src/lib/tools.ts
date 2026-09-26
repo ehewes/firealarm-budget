@@ -142,6 +142,16 @@ export async function dispatchCommerceToolCall(
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   switch (toolName) {
+    case "inspect_storefront": {
+      const { transpileStorefront } = await import("./transpiler");
+      const url = String(args.store_url || "https://demo-store.com/products/pro-runner");
+      const machineContract = await transpileStorefront(url);
+      return {
+        status: "success",
+        machineContract,
+      };
+    }
+
     case "negotiate_price": {
       const res = await cascadeNegotiation({
         productTitle: String(args.product_title || "Product"),
