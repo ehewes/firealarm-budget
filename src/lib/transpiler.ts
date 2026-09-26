@@ -83,6 +83,104 @@ export function sanitizeTargetUrl(urlInput: string): string {
 }
 
 /**
+ * SSRF & Internal IP Validation
+ * Blocks private IP ranges, loopback, link-local (cloud metadata), and non-web protocols.
+ */
+export function isSafeTargetUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    const unbracketed = host.replace(/^\[|\]$/g, "");
+
+    // Block localhost, loopback, and broadcast (IPv4 and IPv6)
+    if (
+      host === "localhost" ||
+      unbracketed === "localhost" ||
+      unbracketed === "0.0.0.0" ||
+      unbracketed === "::1" ||
+      unbracketed === "::" ||
+      unbracketed.startsWith("fe80:") || // IPv6 link-local
+      unbracketed.startsWith("fc00:") || // IPv6 unique local
+      unbracketed.startsWith("fd00:") || // IPv6 unique local
+      host.endsWith(".local") ||
+      host.endsWith(".internal")
+    ) {
+      return false;
+    }
+
+    // Check IPv4 addresses
+    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+      const o1 = Number(ipv4Match[1]);
+      const o2 = Number(ipv4Match[2]);
+
+      // Loopback: 127.0.0.0/8
+      if (o1 === 127) return false;
+      // Private Class A: 10.0.0.0/8
+      if (o1 === 10) return false;
+      // Link-Local / Cloud Metadata (AWS, GCP, Azure): 169.254.0.0/16
+      if (o1 === 169 && o2 === 254) return false;
+      // Private Class B: 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
+      if (o1 === 172 && o2 >= 16 && o2 <= 31) return false;
+      // Private Class C: 192.168.0.0/16
+      if (o1 === 192 && o2 === 168) return false;
+      // Current network: 0.0.0.0/8
+      if (o1 === 0) return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Safe HTTP fetch with strict timeout and maximum byte size limit
+ * Prevents ReDoS, decompress bombs, and slowloris socket exhaustion
+ */
+export async function safeFetchHtml(
+  targetUrl: string,
+  timeoutMs = 3500,
+  maxBytes = 2.5 * 1024 * 1024 // 2.5MB cap
+): Promise<string | null> {
+  if (!isSafeTargetUrl(targetUrl)) {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(targetUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+
+    if (!res.ok) return null;
+
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+      return null;
+    }
+
+    const text = await res.text();
+    return text.slice(0, maxBytes);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Universal HTML Parser
  * Converts arbitrary raw HTML (Schema.org JSON-LD, OpenGraph, or plain DOM cards/tables)
  * into a structured TranspiledStorefront contract.
@@ -306,7 +404,7 @@ export function parseHtmlStorefront(html: string, targetUrlStr: string): Transpi
 
 /**
  * 1. Shopify Deterministic Ingestor
- * Queries Shopify's native `.json` endpoint directly
+ * Queries Shopify's native `.json` endpoint directly with SSRF defense
  */
 async function tryShopifyIngestion(targetUrl: URL): Promise<{
   data?: Record<string, unknown>;
@@ -319,6 +417,10 @@ async function tryShopifyIngestion(targetUrl: URL): Promise<{
 
   const cleanPath = path.replace(/\.json$/, "");
   const shopifyJsonUrl = `${targetUrl.origin}${cleanPath}.json`;
+
+  if (!isSafeTargetUrl(shopifyJsonUrl)) {
+    return null;
+  }
 
   try {
     const res = await fetch(shopifyJsonUrl, {
@@ -345,24 +447,12 @@ async function tryShopifyIngestion(targetUrl: URL): Promise<{
 
 /**
  * 2. Schema.org / JSON-LD / HTML Ingestor
- * Queries target URL and passes HTML to universal parser
+ * Queries target URL using safeFetchHtml (bounded timeout, 2.5MB size limit, SSRF protection)
  */
 async function tryHtmlIngestion(targetUrl: string): Promise<TranspiledStorefront | null> {
-  try {
-    const res = await fetch(targetUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-
-    if (!res.ok) return null;
-    const html = await res.text();
-    return parseHtmlStorefront(html, targetUrl);
-  } catch {
-    return null;
-  }
+  const html = await safeFetchHtml(targetUrl);
+  if (!html) return null;
+  return parseHtmlStorefront(html, targetUrl);
 }
 
 /**
@@ -478,6 +568,48 @@ function createSyntheticProduct(targetUrl: URL): TranspiledStorefront {
 export async function transpileStorefront(rawUrl: string): Promise<TranspiledStorefront> {
   const startTime = Date.now();
   const cleanUrlString = sanitizeTargetUrl(rawUrl);
+
+  // SSRF Protection: Reject private/loopback/cloud metadata targets
+  if (!isSafeTargetUrl(cleanUrlString)) {
+    return {
+      protocol: "commerce/1.0",
+      transpiled_from: cleanUrlString,
+      timestamp: new Date().toISOString(),
+      store: {
+        name: "Security Perimeter",
+        domain: "blocked.internal",
+        currency: "USD",
+        platform: "synthetic_demo",
+      },
+      product: {
+        id: "blocked_ssrf_target",
+        title: "Blocked Target: Private or Non-Routable Address",
+        description:
+          "Target URL rejected by Eden Matrix security firewall. Access to private RFC 1918 subnets, cloud metadata endpoints, or local loopback addresses is strictly forbidden.",
+        base_price: 0,
+        currency: "USD",
+        variants: [],
+        deep_links: {
+          original_url: cleanUrlString,
+        },
+      },
+      rpc: {
+        negotiate: "/api/rpc/negotiate",
+        reserve: "/api/rpc/reserve",
+        checkout: "/api/rpc/checkout",
+        evaluate_bundle: "/api/bundle/evaluate",
+      },
+      telemetry: {
+        raw_html_bytes: 0,
+        transpiled_bytes: 0,
+        estimated_raw_tokens: 0,
+        transpiled_tokens: 0,
+        token_compression_ratio: "0% (blocked by firewall)",
+        latency_ms: Date.now() - startTime,
+      },
+    };
+  }
+
   const targetUrl = new URL(cleanUrlString);
 
   // 1. Try native Shopify .json

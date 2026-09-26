@@ -83,11 +83,43 @@ export interface PurchaseIntent {
 }
 
 /**
- * In-memory fallback session and purchase intent store
- * (Syncs with Supabase in production)
+ * In-memory fallback session and purchase intent store with strict LRU memory caps.
+ * Prevents heap exhaustion / memory leaks from unbounded session creation.
  */
+export const MAX_SESSIONS_CAP = 2000;
+export const MAX_INTENTS_CAP = 2000;
+
 const SESSIONS_STORE = new Map<string, EdenSession>();
 const PURCHASE_INTENTS_STORE = new Map<string, PurchaseIntent>();
+
+export function getEdenSessionStoreCount(): number {
+  return SESSIONS_STORE.size;
+}
+
+export function getEdenIntentsStoreCount(): number {
+  return PURCHASE_INTENTS_STORE.size;
+}
+
+export function setSessionWithEviction(code: string, session: EdenSession) {
+  if (SESSIONS_STORE.size >= MAX_SESSIONS_CAP) {
+    const oldestKey = SESSIONS_STORE.keys().next().value;
+    if (oldestKey) SESSIONS_STORE.delete(oldestKey);
+  }
+  SESSIONS_STORE.set(code, session);
+}
+
+export function setPurchaseIntentWithEviction(intentId: string, intent: PurchaseIntent) {
+  if (PURCHASE_INTENTS_STORE.size >= MAX_INTENTS_CAP) {
+    const oldestKey = PURCHASE_INTENTS_STORE.keys().next().value;
+    if (oldestKey) PURCHASE_INTENTS_STORE.delete(oldestKey);
+  }
+  PURCHASE_INTENTS_STORE.set(intentId, intent);
+}
+
+export function _dangerouslyClearEdenStores() {
+  SESSIONS_STORE.clear();
+  PURCHASE_INTENTS_STORE.clear();
+}
 
 /**
  * Generates a clean Eden Matrix session code (e.g. EM-7K2Q9X4M)
@@ -378,7 +410,7 @@ export async function createEdenSession(params: {
     tree,
   };
 
-  SESSIONS_STORE.set(code, session);
+  setSessionWithEviction(code, session);
   return session;
 }
 
@@ -429,7 +461,7 @@ export function createPurchaseIntent(params: {
     created_at: new Date().toISOString(),
   };
 
-  PURCHASE_INTENTS_STORE.set(intentId, intent);
+  setPurchaseIntentWithEviction(intentId, intent);
   return intent;
 }
 

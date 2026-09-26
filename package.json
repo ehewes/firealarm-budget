@@ -15,7 +15,8 @@
     "test:conflicts": "npx tsx scripts/test-rule-conflicts.ts",
     "test:layouts": "npx tsx scripts/test-messy-layouts.ts",
     "test:nasty": "npx tsx scripts/test-nasty-websites.ts",
-    "test:ai": "npx tsx scripts/test-ai-layer-resilience.ts"
+    "test:ai": "npx tsx scripts/test-ai-layer-resilience.ts",
+    "test:security": "npx tsx scripts/test-adversarial-security.ts"
   },
   "dependencies": {
     "next": "16.3.6",

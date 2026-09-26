@@ -167,14 +167,45 @@ export async function cascadeNegotiation(params: {
     escalationReason: jevRes.cascade.escalationReason,
   });
 
-  const finalAction = grokRes.action;
+  let finalAction = grokRes.action;
   const rawFinalPrice =
     finalAction === "accept"
       ? params.offeredPrice
       : finalAction === "counter_offer" && grokRes.counterPrice
       ? grokRes.counterPrice
       : params.basePrice;
-  const finalPrice = Math.round(rawFinalPrice * 100) / 100;
+  let finalPrice = Math.round(rawFinalPrice * 100) / 100;
+  let message = grokRes.messageToBuyer;
+  let reasoning = grokRes.reasoning;
+
+  // HARD INVARIANT POST-GUARD (Defense against Prompt Injection & Model Exploits):
+  // Never allow LLM outputs to violate the seller's mathematical margin policy.
+  const baseMaxDiscount = params.policy?.maxDiscountPct ?? 25;
+  const bulkExtra =
+    params.policy?.bulkMinQuantity && params.quantity >= params.policy.bulkMinQuantity
+      ? params.policy.bulkExtraDiscountPct ?? 0
+      : 0;
+  const effectiveMaxDiscount = Math.min(baseMaxDiscount + bulkExtra, 80);
+  const minAllowedPrice = Math.round(params.basePrice * (1 - effectiveMaxDiscount / 100) * 100) / 100;
+
+  if (finalPrice < minAllowedPrice) {
+    if (finalAction === "accept") {
+      // Prompt injection or model drift attempted to accept below-floor price
+      finalAction = "counter_offer";
+      finalPrice = minAllowedPrice;
+      message = `We cannot accept $${params.offeredPrice}. The lowest allowed price is $${minAllowedPrice}.`;
+      reasoning = `Financial Invariant Guard: Prevented unauthorized discount ($${params.offeredPrice} vs floor $${minAllowedPrice} at max ${effectiveMaxDiscount}% discount). Overridden to compliant counter-offer.`;
+    } else if (finalAction === "counter_offer") {
+      finalPrice = minAllowedPrice;
+      message = `Our best possible price is $${minAllowedPrice}.`;
+      reasoning = `Financial Invariant Guard: Clamped counter-offer to seller's minimum floor price of $${minAllowedPrice} (${effectiveMaxDiscount}% max discount cap).`;
+    }
+  }
+
+  // Invariant: Never counter higher than original base price
+  if (finalPrice > params.basePrice) {
+    finalPrice = params.basePrice;
+  }
 
   const discountPct = ((params.basePrice - finalPrice) / params.basePrice) * 100;
 
@@ -184,8 +215,8 @@ export async function cascadeNegotiation(params: {
       action: finalAction,
       finalPrice,
       discountPct: Math.round(discountPct * 10) / 10,
-      message: grokRes.messageToBuyer,
-      reasoning: grokRes.reasoning,
+      message,
+      reasoning,
     },
     confidence: 0.9,
     totalLatencyMs: Date.now() - t0,

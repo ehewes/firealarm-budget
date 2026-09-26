@@ -12,35 +12,57 @@ import { TranspiledVariant } from "./transpiler";
  * Discovers hidden lot sizes inside titles, descriptions, and tags.
  * e.g. "Box of 15", "10pcs Lot", "pack of 8", "x25 Bale", "(20 pieces)"
  */
+// Non-garment trinkets and accessories that adversaries or promotional sellers include
+// to artificially inflate piece count and bypass per-piece price filters
+const NON_GARMENT_TRINKETS = /\b(?:stickers?|pins?|badges?|cards?|postcards?|decals?|polybags?|hangers?|buttons?)\b/i;
+
 export function extractLotPieceCount(...texts: (string | undefined | null)[]): number {
   const combined = texts.filter(Boolean).join(" ");
   if (!combined) return 1;
 
+  // Pre-filter: neutralize promotional/swag clauses like "+ pack of 50 stickers" or "includes 100 pins"
+  const sanitizedText = combined
+    .replace(/(?:\+|\b(?:plus|with|includes?|including|bonus|comes with|free)\b)[^,;)]*?\b(?:box|lot|pack|bale|bundle|set|\d+)\b[^,;)]*/gi, (match) => {
+      if (NON_GARMENT_TRINKETS.test(match)) {
+        return " ";
+      }
+      return match;
+    });
+
   // Pattern 1: "box of 15", "lot of 10", "pack of 8", "bale of 25", "set of 4"
-  const boxOfMatch = combined.match(/\b(?:box|lot|pack|bale|bundle|set)\s+of\s+(\d+)\b/i);
-  if (boxOfMatch) {
-    const count = parseInt(boxOfMatch[1], 10);
+  const boxOfRegex = /\b(?:box|lot|pack|bale|bundle|set)\s+of\s+(\d+)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = boxOfRegex.exec(sanitizedText)) !== null) {
+    const trailingContext = sanitizedText.slice(match.index, match.index + 40);
+    if (NON_GARMENT_TRINKETS.test(trailingContext)) continue;
+    const count = parseInt(match[1], 10);
     if (count > 0 && count < 10000) return count;
   }
 
   // Pattern 2: "10pcs", "15 pieces", "20 units", "10-pack"
-  const pcsMatch = combined.match(/\b(\d+)\s*(?:pcs|pieces|units|items|-pack)\b/i);
-  if (pcsMatch) {
-    const count = parseInt(pcsMatch[1], 10);
+  const pcsRegex = /\b(\d+)\s*(?:pcs|pieces|units|items|-pack)\b/gi;
+  while ((match = pcsRegex.exec(sanitizedText)) !== null) {
+    const trailingContext = sanitizedText.slice(match.index, match.index + 40);
+    if (NON_GARMENT_TRINKETS.test(trailingContext)) continue;
+    const count = parseInt(match[1], 10);
     if (count > 0 && count < 10000) return count;
   }
 
   // Pattern 3: "x25" or "25x"
-  const xMatch = combined.match(/(?:\bx(\d+)\b|\b(\d+)x\b)/i);
-  if (xMatch) {
-    const count = parseInt(xMatch[1] || xMatch[2], 10);
+  const xRegex = /(?:\bx(\d+)\b|\b(\d+)x\b)/gi;
+  while ((match = xRegex.exec(sanitizedText)) !== null) {
+    const trailingContext = sanitizedText.slice(match.index, match.index + 30);
+    if (NON_GARMENT_TRINKETS.test(trailingContext)) continue;
+    const count = parseInt(match[1] || match[2], 10);
     if (count > 1 && count < 10000) return count;
   }
 
   // Pattern 4: "(15)" or "(15 items)"
-  const parenMatch = combined.match(/\((\d+)(?:\s*(?:items|pcs|pieces))?\)/i);
-  if (parenMatch) {
-    const count = parseInt(parenMatch[1], 10);
+  const parenRegex = /\((\d+)(?:\s*(?:items|pcs|pieces))?\)/gi;
+  while ((match = parenRegex.exec(sanitizedText)) !== null) {
+    const trailingContext = sanitizedText.slice(match.index, match.index + 30);
+    if (NON_GARMENT_TRINKETS.test(trailingContext)) continue;
+    const count = parseInt(match[1], 10);
     if (count > 1 && count < 10000) return count;
   }
 
