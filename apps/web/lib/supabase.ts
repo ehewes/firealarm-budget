@@ -63,7 +63,12 @@ export async function signUp(email: string, password: string): Promise<"signed_i
   return "check_email";
 }
 
-export async function signIn(email: string, password: string): Promise<void> {
+/** Team accounts made without a mailbox sign in with a bare username: `admin` is admin@edenmatrix.xyz. */
+export const TEAM_EMAIL_DOMAIN = "edenmatrix.xyz";
+
+export async function signIn(login: string, password: string): Promise<void> {
+  const name = login.trim();
+  const email = name.includes("@") ? name : `${name.toLowerCase()}@${TEAM_EMAIL_DOMAIN}`;
   const { error } = await supabase().auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
 }
