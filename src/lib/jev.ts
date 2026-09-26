@@ -469,3 +469,167 @@ export async function checkPreFlightRisk(params: {
     },
   };
 }
+
+/**
+ * 4. Jev Score Primitive: Dynamic Deal Quality Index (1 - 10)
+ * Evaluates the overall commercial attractiveness of an offer on an ordinal scale.
+ */
+export async function scoreDealQuality(params: {
+  basePrice: number;
+  offeredPrice: number;
+  quantity?: number;
+  stockRemaining?: number;
+  customerTier?: "standard" | "vip" | "enterprise";
+}): Promise<{
+  score: number; // 1 to 10
+  action: "auto_accept" | "negotiate_counter" | "reject";
+  rationale: string;
+  latencyMs: number;
+}> {
+  const sanity = validateAndSanitizePricing({
+    basePrice: params.basePrice,
+    offeredPrice: params.offeredPrice,
+    quantity: params.quantity,
+    stockRemaining: params.stockRemaining,
+  });
+
+  if (sanity.immediateAction === "accept") {
+    return {
+      score: 10,
+      action: "auto_accept",
+      rationale: sanity.reason || "Full price or tipping premium offer.",
+      latencyMs: 1,
+    };
+  }
+
+  if (sanity.immediateAction === "reject") {
+    return {
+      score: 1,
+      action: "reject",
+      rationale: sanity.reason || "Violates financial sanity bounds.",
+      latencyMs: 1,
+    };
+  }
+
+  const result = await executeJevDecisions({
+    state: {
+      base_price_usd: sanity.sanitizedBasePrice,
+      offered_price_usd: sanity.sanitizedOfferedPrice,
+      effective_discount_pct: sanity.effectiveDiscountPct,
+      quantity_ordered: sanity.sanitizedQuantity,
+      stock_remaining: params.stockRemaining ?? 20,
+      customer_tier: params.customerTier || "standard",
+    },
+    questions: {
+      deal_quality_score: {
+        type: "score",
+        instructions:
+          "On a scale of 1 (terrible deal for merchant) to 10 (exceptionally profitable win-win deal), rate this buyer's offer considering volume, margin, and stock.",
+        min: 1,
+        max: 10,
+      },
+    },
+  });
+
+  const rawScore = Number(result.decisions.deal_quality_score?.value ?? 5);
+  const score = Math.max(1, Math.min(10, Math.round(rawScore)));
+
+  let action: "auto_accept" | "negotiate_counter" | "reject" = "negotiate_counter";
+  let rationale = `Deal score evaluated at ${score}/10.`;
+
+  if (score >= 8) {
+    action = "auto_accept";
+    rationale = `High-scoring deal (${score}/10). Instant approval recommended.`;
+  } else if (score <= 4) {
+    action = "reject";
+    rationale = `Low-scoring deal (${score}/10). Discount too steep for available inventory.`;
+  } else {
+    action = "negotiate_counter";
+    rationale = `Borderline deal (${score}/10). Moderate compromise counter-offer recommended.`;
+  }
+
+  return {
+    score,
+    action,
+    rationale,
+    latencyMs: result.latencyMs,
+  };
+}
+
+/**
+ * 5. Review & Sizing Fit Intelligence (Jev Sub-100ms Review Distiller)
+ * Extracts structured sizing fit, durability, and buyer sentiment from customer review snippets.
+ */
+export async function distillProductReviews(params: {
+  productTitle: string;
+  reviews: string[];
+  targetSize?: string | number;
+}): Promise<{
+  sizeFit: "runs_small" | "true_to_size" | "runs_large";
+  durabilityScore: number; // 1 to 10
+  overallSentimentRecommendation: boolean;
+  recommendedSizeAdjustment: string;
+  latencyMs: number;
+}> {
+  const reviewSnippets = params.reviews.slice(0, 8).join("\n---\n");
+
+  const result = await executeJevDecisions({
+    state: {
+      product_title: params.productTitle,
+      user_target_size: params.targetSize || "Standard",
+      customer_reviews: reviewSnippets,
+    },
+    questions: {
+      sizing_fit: {
+        type: "choice",
+        instructions:
+          "Based on the customer reviews, how does this shoe fit relative to standard sizing?",
+        criteria: {
+          "runs_small": "Customers consistently report shoe feels tight/small, recommend sizing up half a size.",
+          "true_to_size": "Customers report true to size, fits as expected.",
+          "runs_large": "Customers report shoe runs big/loose, recommend sizing down.",
+        },
+      },
+      durability_rating: {
+        type: "score",
+        instructions:
+          "On a scale of 1 to 10, how well does the product hold up according to long-term review feedback?",
+        min: 1,
+        max: 10,
+      },
+      verified_satisfaction: {
+        type: "noul",
+        instructions:
+          "Do the vast majority of verified purchasers recommend this item to other runners?",
+      },
+    },
+  });
+
+  const fitDecision = String(result.decisions.sizing_fit?.value || "true_to_size") as
+    | "runs_small"
+    | "true_to_size"
+    | "runs_large";
+
+  const durability = Math.max(
+    1,
+    Math.min(10, Math.round(Number(result.decisions.durability_rating?.value ?? 8)))
+  );
+
+  const satisfactionProb = result.decisions.verified_satisfaction?.probability ?? 0.8;
+  const isRecommended = satisfactionProb >= 0.5;
+
+  let adjustment = "Order your normal standard size.";
+  if (fitDecision === "runs_small") {
+    adjustment = "Consider sizing up by +0.5 based on frequent customer feedback.";
+  } else if (fitDecision === "runs_large") {
+    adjustment = "Consider sizing down by -0.5 based on frequent customer feedback.";
+  }
+
+  return {
+    sizeFit: fitDecision,
+    durabilityScore: durability,
+    overallSentimentRecommendation: isRecommended,
+    recommendedSizeAdjustment: adjustment,
+    latencyMs: result.latencyMs,
+  };
+}

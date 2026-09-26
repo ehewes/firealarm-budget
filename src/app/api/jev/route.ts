@@ -125,7 +125,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(res);
     }
 
-    // 6. Default: Raw custom questions to Jev
+    // 6. System-1 Primitive: Score Deal Quality
+    if (action === "score") {
+      const { scoreDealQuality } = await import("@/lib/jev");
+      const { basePrice, offeredPrice, quantity, stockRemaining, customerTier } = body;
+      const res = await scoreDealQuality({
+        basePrice,
+        offeredPrice,
+        quantity,
+        stockRemaining,
+        customerTier,
+      });
+      return NextResponse.json(res);
+    }
+
+    // 7. System-1 Primitive: Review Intelligence
+    if (action === "reviews") {
+      const { distillProductReviews } = await import("@/lib/jev");
+      const { productTitle, reviews, targetSize } = body;
+      const res = await distillProductReviews({
+        productTitle,
+        reviews: reviews || [],
+        targetSize,
+      });
+      return NextResponse.json(res);
+    }
+
+    // 8. Default: Raw custom questions to Jev
     const res = await executeJevDecisions({
       model: body.model,
       state: body.state || {},

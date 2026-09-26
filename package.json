@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:jev": "node scripts/test-jev.mjs",
-    "test:hard": "npx tsx scripts/test-hard-cases.ts"
+    "test:hard": "npx tsx scripts/test-hard-cases.ts",
+    "test:battle": "npx tsx scripts/test-agent-battle.ts"
   },
   "dependencies": {
     "next": "16.3.6",
