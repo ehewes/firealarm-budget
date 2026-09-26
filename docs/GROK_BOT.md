@@ -88,6 +88,11 @@ Issuing, which Cloudflare's agentic payments work supports through MPP), keep it
 
 - Supabase **Confirm email** is on in production, and Supabase's built-in mailer sends only a few emails an hour.
   For a live demo, switch it off (Authentication → Sign In / Providers → Email). Sign-up then completes instantly.
+- A team demo account exists in production: username `admin` (`admin@edenmatrix.xyz`, which has no mailbox; the
+  sign-in box turns a bare username into `<name>@edenmatrix.xyz`). Its password was set through the Supabase admin
+  API from inside the API container with a bcrypt `password_hash`, because it is shorter than the project's
+  minimum. Anyone who knows the password can approve that account's purchases, so change it before a real card
+  is ever linked.
 - Grok Bot must be able to reach `https://go.edenmatrix.xyz/v1/mcp`. The Cloudflare WAF skip rule covers
   `/v1/mcp` as well as `/v1/sessions/*` (see [DEPLOYMENT.md](DEPLOYMENT.md)), so the zone's AI-bot blocking
   doesn't stop it.

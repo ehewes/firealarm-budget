@@ -142,13 +142,13 @@ export function AccountView() {
         <section className={card}>
           <h2 className="text-lg font-semibold">Create an account or sign in</h2>
           <p className="text-sm text-zinc-500">Sessions you started on this device as a guest come with you when you create an account.</p>
-          <input className={input} type="email" placeholder="you@example.com" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className={input} type="text" placeholder="Email (or username to sign in)" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className={input} type="password" placeholder="Password (8+ characters)" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               className={primary}
-              disabled={busy || !email || password.length < 8}
+              disabled={busy || !email.includes("@") || password.length < 8}
               onClick={() =>
                 act(async () => {
                   const outcome = await signUp(email, password);
