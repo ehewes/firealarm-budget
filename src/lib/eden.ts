@@ -115,27 +115,93 @@ export async function determineTreePath(
   let subcategory = "tops";
   let tier = "standard";
 
-  if (lower.includes("pant") || lower.includes("bottom") || lower.includes("track") || lower.includes("jean")) {
+  if (
+    lower.includes("pant") ||
+    lower.includes("bottom") ||
+    lower.includes("track") ||
+    lower.includes("jean") ||
+    lower.includes("denim") ||
+    lower.includes("trouser")
+  ) {
     category = "bottoms";
-    subcategory = lower.includes("track") ? "trackpants" : lower.includes("jean") ? "denim" : "trousers";
+    subcategory = lower.includes("track")
+      ? "trackpants"
+      : lower.includes("jean") || lower.includes("denim")
+      ? "denim"
+      : "trousers";
   } else if (lower.includes("short")) {
     category = "bottoms";
     subcategory = "shorts";
-  } else if (lower.includes("jacket") || lower.includes("hoodie") || lower.includes("fleece") || lower.includes("outerwear")) {
+  } else if (
+    lower.includes("jacket") ||
+    lower.includes("hoodie") ||
+    lower.includes("fleece") ||
+    lower.includes("outerwear") ||
+    lower.includes("coat") ||
+    lower.includes("windbreaker")
+  ) {
     category = "outerwear";
-    subcategory = lower.includes("hoodie") ? "hoodies" : lower.includes("fleece") ? "fleece" : "jackets";
-  } else if (lower.includes("shoe") || lower.includes("runner") || lower.includes("sneaker")) {
+    subcategory = lower.includes("hoodie")
+      ? "hoodies"
+      : lower.includes("fleece")
+      ? "fleece"
+      : "jackets";
+  } else if (
+    lower.includes("sweater") ||
+    lower.includes("knit") ||
+    lower.includes("cardigan") ||
+    lower.includes("pullover")
+  ) {
+    category = "knitwear";
+    subcategory = lower.includes("cardigan") ? "cardigans" : "sweaters";
+  } else if (
+    lower.includes("hat") ||
+    lower.includes("cap") ||
+    lower.includes("beanie") ||
+    lower.includes("bag") ||
+    lower.includes("backpack") ||
+    lower.includes("belt") ||
+    lower.includes("sock") ||
+    lower.includes("glasses") ||
+    lower.includes("sunglass")
+  ) {
+    category = "accessories";
+    subcategory =
+      lower.includes("hat") || lower.includes("cap") || lower.includes("beanie")
+        ? "headwear"
+        : lower.includes("bag") || lower.includes("backpack")
+        ? "bags"
+        : lower.includes("sock")
+        ? "socks"
+        : "accessories";
+  } else if (
+    lower.includes("shoe") ||
+    lower.includes("runner") ||
+    lower.includes("sneaker") ||
+    lower.includes("boot")
+  ) {
     category = "footwear";
-    subcategory = "running shoes";
+    subcategory = lower.includes("boot") ? "boots" : "running shoes";
   } else if (lower.includes("tee") || lower.includes("shirt") || lower.includes("top")) {
     category = "tops";
     subcategory = lower.includes("tee") ? "t-shirts" : "shirts";
   }
 
-  if (lower.includes("vintage") || lower.includes("y2k") || lower.includes("retro")) {
+  if (
+    lower.includes("vintage") ||
+    lower.includes("y2k") ||
+    lower.includes("retro") ||
+    lower.includes("90s")
+  ) {
     tier = "vintage";
-  } else if (lower.includes("premium") || lower.includes("pro") || lower.includes("elite")) {
+  } else if (
+    lower.includes("premium") ||
+    lower.includes("pro") ||
+    lower.includes("elite")
+  ) {
     tier = "premium";
+  } else if (lower.includes("deadstock") || lower.includes("nwt")) {
+    tier = "deadstock";
   }
 
   return [category, subcategory, tier];
@@ -181,7 +247,7 @@ export function buildCategoryTree(products: EdenProductItem[]): CategoryTreeNode
 /**
  * Server-Side Rules Filter and Ranking Engine
  * - Hard filters run in 0ms (max_per_piece, min_pieces, exclude_categories)
- * - Free-text notes scored via Jev
+ * - Free-text notes scored via Jev / semantic affinity scoring
  * - Generates human & agent-friendly 'why' justification per item
  */
 export async function applyEdenRules(
@@ -206,14 +272,35 @@ export async function applyEdenRules(
       whyParts.push(`$${p.per_piece.toFixed(2)}/pc`);
     }
     if (p.pieces > 1) whyParts.push(`${p.pieces} pieces bundle`);
+
+    // Score affinity against user free-text notes
+    let noteAffinityScore = 0;
+    const matchedNotes: string[] = [];
+
     if (rules.notes && rules.notes.length > 0) {
-      whyParts.push(`matches preferences: "${rules.notes.join(", ")}"`);
+      const fullText = `${p.title} ${p.tree_path.join(" ")} ${p.grade || ""} ${JSON.stringify(
+        p.attrs || {}
+      )}`.toLowerCase();
+      for (const note of rules.notes) {
+        const noteKeywords = note.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+        const matches = noteKeywords.filter((w) => fullText.includes(w));
+        if (matches.length > 0) {
+          noteAffinityScore += (matches.length / noteKeywords.length) * 15;
+          matchedNotes.push(note);
+        }
+      }
+    }
+
+    if (matchedNotes.length > 0) {
+      whyParts.push(`matches preferences: "${matchedNotes.join(", ")}"`);
+    } else if (rules.notes && rules.notes.length > 0) {
+      whyParts.push(`evaluated against: "${rules.notes.join(", ")}"`);
     }
 
     filtered.push({
       ...p,
       why: whyParts.join("; "),
-      score: 100 - p.per_piece, // Default rank: best price per piece first
+      score: Math.round((100 - p.per_piece + noteAffinityScore) * 10) / 10,
     });
   }
 

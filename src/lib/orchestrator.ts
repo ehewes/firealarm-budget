@@ -168,12 +168,13 @@ export async function cascadeNegotiation(params: {
   });
 
   const finalAction = grokRes.action;
-  const finalPrice =
+  const rawFinalPrice =
     finalAction === "accept"
       ? params.offeredPrice
       : finalAction === "counter_offer" && grokRes.counterPrice
       ? grokRes.counterPrice
       : params.basePrice;
+  const finalPrice = Math.round(rawFinalPrice * 100) / 100;
 
   const discountPct = ((params.basePrice - finalPrice) / params.basePrice) * 100;
 
