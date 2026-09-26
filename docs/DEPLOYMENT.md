@@ -1,8 +1,18 @@
 # Deployment
 
 Production runs on the team VPS behind a Cloudflare Tunnel, deployed from GitHub Actions. This page is the
-target setup and the runbook. The compose files, Caddyfile and workflows it describes arrive with the API,
-so until then this is the plan they implement.
+setup and the runbook. The files it describes:
+
+| File | What it is |
+| --- | --- |
+| `deploy/api.Dockerfile`, `deploy/web.Dockerfile` | The two images (build context is the repo root) |
+| `deploy/compose.yml` | Caddy and the API |
+| `deploy/compose.web.yml` | The web app, added once `apps/web` exists |
+| `deploy/compose.tunnel.yml` | This project's cloudflared |
+| `deploy/caddy/Caddyfile` | Path routing and headers |
+| `deploy/render-env.sh` | Writes the production `.env` from GitHub secrets (runs on the runner) |
+| `deploy/remote-deploy.sh`, `deploy/smoke.sh` | The rollout and the post-deploy checks (run on the VPS) |
+| `.github/workflows/ci.yml`, `deploy.yml` | CI on every PR; deploys from `main` |
 
 ## Where it runs
 
@@ -41,8 +51,8 @@ flowchart LR
 
 | Service | Image | Limits | Notes |
 | --- | --- | --- | --- |
-| `caddy` | `caddy:2-alpine` | 128 MB | Path routing and security headers. Its config directory is bind-mounted and reloaded on every deploy |
-| `web` | `ghcr.io/ehewes/firealarm-budget-web:<sha>` | 1 CPU, 384 MB | Next.js standalone. `NEXT_PUBLIC_*` values are baked in at build time |
+| `caddy` | `caddy:2.10-alpine` | 128 MB | Path routing and security headers. Its config directory is bind-mounted and reloaded on every deploy |
+| `web` | `ghcr.io/ehewes/firealarm-budget-web:<sha>` | 1 CPU, 384 MB | Next.js standalone. `NEXT_PUBLIC_*` values are baked in at build time. Only runs once `apps/web` exists; until then Caddy answers non-API paths with a short "not deployed yet" message |
 | `api` | `ghcr.io/ehewes/firealarm-budget-api:<sha>` | 1 CPU, 512 MB | FastAPI with scrapes running as `BackgroundTasks` |
 | `cloudflared` | `cloudflare/cloudflared` (pinned) | 128 MB | This project's own tunnel, token-based. It joins only this project's network |
 
@@ -53,8 +63,8 @@ Supabase Realtime (the live tree) connects from the browser straight to Supabase
 not pass through the tunnel. cloudflared buffers server-sent events, so don't stream responses through it.
 
 **Scrapes run inside the API process.** A deploy restarts the API, which kills any scrape in flight. On
-startup the API should mark scrapes left in `pending`, `crawling` or `classifying` for more than a few minutes
-as `failed`, so no session spins forever.
+startup the API marks scrapes still `pending`, `crawling` or `classifying` with no progress for 10 minutes
+(`scrapes.updated_at`) as `failed`, so no session spins forever.
 
 ## How a deploy happens
 
@@ -72,16 +82,23 @@ as `failed`, so no session spins forever.
    - Remove this project's superseded image tags (only ours; the disk filled up on 2026-09-15 without this).
    - `docker compose pull && docker compose up -d --remove-orphans`.
    - `caddy reload`.
-6. **Smoke test** from inside the containers (API `/v1/health`, web `/healthz`, every service running),
-   never through the tunnel.
+6. **Smoke test** (`deploy/smoke.sh`) from inside the containers, never through the tunnel. It checks the API
+   answers `/v1/ready` (so the database is reachable), Caddy routes `/v1` (and `/` once the web app is deployed),
+   and every service is running.
 
 Every compose call on the box has the same shape. `--env-file` is not optional: without it, compose looks for
-`.env` next to the compose file and silently uses defaults.
+`.env` next to the compose file and silently uses defaults. Add `-f deploy/compose.web.yml` once the web app is
+deployed (`.env` then has `WEB_ENABLED='true'`; the scripts check it).
 
 ```sh
 cd /opt/firealarm-budget
-docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.tunnel.yml <command>
+docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.tunnel.yml [-f deploy/compose.web.yml] <command>
 ```
+
+**The web app's contract with the deploy:** `apps/web` must have a `package-lock.json` and set
+`output: "standalone"` in `next.config`. It must answer `GET /` with a 200 (the healthcheck), and read its
+public settings from the `NEXT_PUBLIC_*` variables in [SECRETS.md](SECRETS.md). CI starts building and deploying
+it the moment `apps/web/package.json` exists on `main`.
 
 ## Rollback
 
@@ -100,6 +117,7 @@ Migrations are roll-forward only; a rollback never undoes schema changes.
 ssh deploy@100.102.111.88
 cd /opt/firealarm-budget
 C="docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.tunnel.yml"
+# plus: C="$C -f deploy/compose.web.yml" once the web app is deployed
 
 $C ps                        # what is running, and health
 $C logs --tail=100 api       # API and scrape logs
@@ -134,8 +152,9 @@ Done once, by hand. Paste secrets only into `gh secret set` prompts, never into 
    `(http.host eq "go.edenmatrix.xyz" and (starts_with(http.request.uri.path, "/v1/sessions/") or http.request.uri.path in {"/openapi.json" "/robots.txt" "/llms.txt"}))`
 4. Check that managed robots.txt isn't adding disallow rules for this host.
 
-**Tailscale:** create an OAuth client with the Auth Keys (write) scope and tag `tag:ci`. The other repos use
-auth keys that expire in November and December 2026; an OAuth client does not expire.
+**Tailscale:** create an OAuth client with the Auth Keys (write) scope and tag `tag:ci`, and set
+`TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. The other repos use auth keys that expire in November and December
+2026; an OAuth client does not. A reusable, ephemeral `tag:ci` auth key in `TS_AUTHKEY` also works as a fallback.
 
 **VPS** (safe alongside the other stacks):
 1. `sudo install -d -o deploy -g deploy -m 750 /opt/firealarm-budget`

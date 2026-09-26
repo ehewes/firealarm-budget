@@ -28,6 +28,9 @@ make db-stop
 The local keys `make db-status` prints are fixed development keys, safe to put in local env files and useless
 anywhere else.
 
+`make db-reset` re-applies migrations but does not reload `supabase/config.toml`. After changing the config
+(auth settings, for example), run `make db-stop && make db`.
+
 ## Env files
 
 As in the README quick start: copy `env.example` to `apps/api/.env` and `apps/web/.env.local`, then fill in the

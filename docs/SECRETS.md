@@ -25,7 +25,7 @@ After changing a runtime secret, redeploy (re-run the latest deploy workflow) so
 | --- | --- | --- |
 | `SUPABASE_SERVICE_ROLE_KEY` | api | Server key; bypasses RLS. Never in the web app |
 | `SUPABASE_JWT_SECRET` | api | Only if the project still signs tokens with the legacy HS256 secret; otherwise tokens are verified via the project's JWKS |
-| `SUPABASE_DB_URL` | CI migrate job | Session pooler connection string, used only by `supabase db push`. Never rendered to the box |
+| `SUPABASE_DB_URL` | CI migrate job | Session pooler connection string, used only by `supabase db push`. Never rendered to the box. The password part must be percent-encoded |
 | `BRIGHTDATA_API_KEY` | api | Web Unlocker API key |
 | `OPENROUTER_API_KEY` or `JEV_API_KEY` | api | Access to Jev (`typesafe/jev-1.13`). Through OpenRouter today; `JEV_API_KEY` if we go to TypeSafe directly |
 | `GROK_API_KEY` | api | xAI API: attribute extraction and rule parsing |
@@ -33,6 +33,7 @@ After changing a runtime secret, redeploy (re-run the latest deploy workflow) so
 | `AGENT_CARD_API_KEY` | api | Stretch goal: the agent card provider |
 | `CLOUDFLARE_TUNNEL_TOKEN` | cloudflared | This project's tunnel |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | CI | Tailscale OAuth client (tag `tag:ci`); lets the runner reach the VPS |
+| `TS_AUTHKEY` | CI | Fallback only if there is no OAuth client: a reusable, ephemeral `tag:ci` auth key (it expires) |
 | `VPS_SSH_KEY` | CI | Private half of the dedicated deploy key, usable only from the tailnet |
 
 ## Variables (not secret)
@@ -47,6 +48,8 @@ After changing a runtime secret, redeploy (re-run the latest deploy workflow) so
 | `BRIGHTDATA_UNLOCKER_ZONE` | the zone name | api |
 | `SESSION_TTL_HOURS` | `24` | api |
 | `SCRAPE_CONCURRENCY` | `8` | api |
+| `MAX_PRODUCT_PAGES` | `10` | api: product pages fetched per scrape (each one counts as a scrape) |
+| `GROK_BOT_URL` | `https://grok.com/` | api: where Continue to Grok links point |
 | `SCRAPE_MONTHLY_MAX` | `5000` | api: Bright Data fetches per month, then scraping stops |
 | `JEV_MONTHLY_BUDGET_USD` | `5` | api: Jev spend per month, then it falls back to heuristics |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` | web, at build time |

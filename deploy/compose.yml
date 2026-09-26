@@ -1,0 +1,77 @@
+# Production stack on the VPS, run from /opt/firealarm-budget:
+#   docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.tunnel.yml [-f deploy/compose.web.yml] …
+# `--env-file .env` is not optional: without it compose looks for .env next to this file
+# and silently falls back to defaults. deploy/remote-deploy.sh builds the command.
+#
+# No service publishes a port. The only way in is this project's own Cloudflare tunnel
+# (compose.tunnel.yml), which is also why CF-Connecting-IP can be trusted.
+name: firealarm-budget
+
+x-logging: &logging
+  # Nothing on this box rotates Docker logs by default; one stack filled 900 MB.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      # The directory, not the file: scp replaces the Caddyfile with a new inode, which a
+      # file bind mount would never see. The deploy runs `caddy reload` after `up`.
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    mem_limit: 128m
+    logging: *logging
+
+  api:
+    image: ghcr.io/ehewes/firealarm-budget-api:${IMAGE_TAG:?IMAGE_TAG is not set}
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8000"
+    # Only what the API reads: the whole .env is never handed to a container.
+    environment:
+      ENVIRONMENT: production
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is not set}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is not set}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      BRIGHTDATA_API_KEY: ${BRIGHTDATA_API_KEY:-}
+      BRIGHTDATA_UNLOCKER_ZONE: ${BRIGHTDATA_UNLOCKER_ZONE:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      GROK_BOT_URL: ${GROK_BOT_URL:-https://grok.com/}
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:?ALLOWED_DOMAINS is not set}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN is not set}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      SCRAPE_CONCURRENCY: ${SCRAPE_CONCURRENCY:-8}
+      MAX_PRODUCT_PAGES: ${MAX_PRODUCT_PAGES:-10}
+      SCRAPE_MONTHLY_MAX: ${SCRAPE_MONTHLY_MAX:-5000}
+      JEV_MONTHLY_BUDGET_USD: ${JEV_MONTHLY_BUDGET_USD:-5}
+      IP_HASH_SALT: ${IP_HASH_SALT:?IP_HASH_SALT is not set}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Scrapes run in this process, so a restart ends them; keep the outage short anyway.
+    stop_grace_period: 10s
+    cpus: 1.0
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:
