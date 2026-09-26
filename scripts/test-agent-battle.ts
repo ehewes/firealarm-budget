@@ -86,8 +86,51 @@ async function runTests() {
     `Result: ${JSON.stringify(checkoutResult)}`
   );
 
-  // 3. Agent-vs-Agent Battle Simulation
-  console.log("\n▶ [Test 3] Agent-vs-Agent Negotiation Battle");
+  // 3. Smart Basket & Bundle Upsell Engine Test
+  console.log("\n▶ [Test 3] Smart Basket & Bundle Upsell Engine");
+  const { evaluateBundleUpsell } = await import("../src/lib/bundler");
+
+  const bundleProposal = await evaluateBundleUpsell({
+    primaryProduct: {
+      id: "prod_shoe_01",
+      title: "Alphafly Zoom Runner",
+      basePrice: 120,
+      offeredPrice: 95, // 20.8% discount requested (exceeds standard 15% single-item cap)
+      quantity: 1,
+    },
+    catalogAddOns: [
+      {
+        id: "addon_socks",
+        title: "Aero Anti-Blister Running Socks (3-Pack)",
+        category: "Accessories",
+        basePrice: 18,
+        stockRemaining: 20,
+      },
+    ],
+    sellerBundlePolicy: {
+      maxSingleItemDiscountPct: 15,
+      maxBundleDiscountPct: 20,
+    },
+  });
+
+  assert(
+    bundleProposal.canOfferBundle === true,
+    "Bundle Engine: Converted rejected single-item discount to bundle offer",
+    `Bundle offer: ${bundleProposal.messageToBuyer}`
+  );
+  assert(
+    bundleProposal.bundleTotalRetail === 138, // 120 + 18
+    "Bundle Engine: Combined retail total = $138 ($120 shoe + $18 socks)",
+    `Total: $${bundleProposal.bundleTotalRetail}`
+  );
+  assert(
+    bundleProposal.discountedBundlePrice <= 111,
+    "Bundle Engine: Discounted bundle price applied correctly",
+    `Discounted: $${bundleProposal.discountedBundlePrice}`
+  );
+
+  // 4. Agent-vs-Agent Battle Simulation
+  console.log("\n▶ [Test 4] Agent-vs-Agent Negotiation Battle");
 
   // 3.1 Layer 1 Instant Battle (Full price / tipping - 1ms, 0 tokens)
   const battleInstant = await runAgentNegotiationBattle({
