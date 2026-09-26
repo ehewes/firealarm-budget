@@ -11,10 +11,11 @@ about how the schema changes and what each migration added.
 | --- | --- |
 | `0001_init.sql` | The core schema: scrapes, products, page cache, sessions, session picks, rulesets, card links, purchase intents, RLS, Realtime for the live tree |
 | `0002_entry_and_limits.sql` | Session entry gate and abuse fields, one default ruleset per user, monthly spend counters |
+| `0003_scrape_title_and_usage_fn.sql` | `scrapes.title` and `scrapes.updated_at`, and the `increment_usage` function |
 
 Rules:
 
-- **Additive only.** Never edit or rename an applied migration. Add the next number (`0003_…`).
+- **Additive only.** Never edit or rename an applied migration. Add the next number (`0004_…`).
 - **Stay compatible with the running version.** Deploys migrate before new images start, so for a few seconds
   the old API runs against the new schema. Add columns with defaults; drop things in a later release.
 - **Prove it applies from scratch** with `make db-reset` before opening the PR.
@@ -54,3 +55,16 @@ returning amount;
 ```
 
 RLS is on with no policies, so only the API (service role) can read or write it.
+
+## What 0003 added
+
+**`scrapes.title`**: the listing page's title ("Nike Vintage Wholesale"), returned as `collection` by
+`GET /v1/sessions/{code}`.
+
+**`scrapes.updated_at`**: bumped at every pipeline step. Scrapes run inside the API process, so a restart kills
+any in flight. On startup the API marks scrapes still `pending`, `crawling` or `classifying` with no progress
+for 10 minutes as `failed`, so no session page waits forever.
+
+**`increment_usage(key, amount)`**: adds to this month's counter and returns the new total in one statement,
+callable over the REST API by the service role only. The API calls it before every Bright Data fetch and after
+every Jev decision.
