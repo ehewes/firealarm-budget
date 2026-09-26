@@ -39,6 +39,8 @@ export type Session = {
   store: string;
   collection: string | null;
   status: "pending" | "crawling" | "classifying" | "ready" | "failed";
+  /** Why the page couldn't be read, when status is "failed". */
+  error: string | null;
   product_count: number;
   snapshot_at: string;
   rules: Record<string, unknown>;

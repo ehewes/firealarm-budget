@@ -86,7 +86,9 @@ def test_a_page_without_products_fails_instead_of_inventing_some(make_client):
     client = factory(fetcher=_NothingToList())
 
     code = _start(client).json()["code"]
-    assert client.get(f"/v1/sessions/{code}").json()["status"] == "failed"
+    session = client.get(f"/v1/sessions/{code}").json()
+    assert session["status"] == "failed"
+    assert session["error"] == "no products were found on that page"
     assert db.execute("select count(*) as n from public.products").fetchone()["n"] == 0
 
 

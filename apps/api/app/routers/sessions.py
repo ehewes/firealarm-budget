@@ -79,6 +79,7 @@ async def get_session(
         store=scrape["domain"],
         collection=scrape.get("title"),
         status=scrape["status"],
+        error=scrape.get("error") if scrape["status"] == "failed" else None,
         product_count=scrape["product_count"],
         snapshot_at=scrape["scraped_at"],
         rules=Rules.model_validate(session["rules"] or {}),
