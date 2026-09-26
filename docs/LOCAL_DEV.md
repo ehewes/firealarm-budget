@@ -40,15 +40,27 @@ Real fetches cost money and count against `SCRAPE_MONTHLY_MAX` in whatever datab
 ## Running
 
 ```sh
-make api         # cd apps/api && uvicorn app.main:app --reload --port 8000   (docs at /docs)
-make web         # cd apps/web && npm run dev                                   (http://localhost:3000)
-make api-test    # pytest
-make web-check   # lint + build
+make api-install  # apps/api/.venv with requirements-dev.txt
+make api          # uvicorn app.main:app --reload --port 8000   (docs at http://localhost:8000/docs)
+make api-offline  # same, but scrapes the saved fixtures: no Bright Data key, no spend
+make web          # cd apps/web && npm run dev                  (http://localhost:3000)
+make api-test     # unit tests, no database
+make api-test-db  # everything, against local Supabase (after make db)
+make web-check    # lint + build
 ```
+
+`apps/api/.env` for local Supabase needs `SUPABASE_URL=http://127.0.0.1:54321` and the local
+`SERVICE_ROLE_KEY` from `make db-status` as `SUPABASE_SERVICE_ROLE_KEY`. Locally signed tokens are verified
+through the local JWKS automatically.
+
+**Offline mode** (`make api-offline`, or `FIXTURES_DIR=tests/fixtures`) serves
+`apps/api/tests/fixtures/collection.html` for listing pages and `product.html` for product pages. These are
+synthetic pages built to the same shape as joinfleek's real markup, so the whole pipeline (extraction, the
+tree, rules) runs with no keys. Without `OPENROUTER_API_KEY`, Jev is skipped and keyword placement is used.
 
 Then try `http://localhost:3000/https://www.joinfleek.com/collections/nike`.
 
 ## Adding a migration
 
-Create the next numbered file in `supabase/migrations/` (for example `0003_what_it_adds.sql`). Never edit an
+Create the next numbered file in `supabase/migrations/` (for example `0004_what_it_adds.sql`). Never edit an
 applied one. Prove it applies from scratch with `make db-reset`, then update [DATABASE.md](DATABASE.md).
