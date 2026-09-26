@@ -57,6 +57,10 @@ The "Continue to Grok" choice is shown over the building tree, so scrape latency
 
 ### 3. Purchase (signed-in only)
 
+*As built (2026-09-26):* the agent reaches this through the MCP tool `create_purchase_intent` on `/v1/mcp`,
+authenticated by an agent token from the dashboard, rather than a REST call. The card is a demo card and checkout
+is a demo checkout. Details and the safety rules are in [GROK_BOT.md](GROK_BOT.md).
+
 1. User asks Grok to buy → Grok calls `POST /v1/sessions/{code}/purchase-intents`.
 2. API refuses if the session owner is anonymous or has no linked card. Otherwise it re-fetches the chosen products (fresh price + stock), records a `pending` intent with the quoted total, and returns a `confirm_url`.
 3. User opens the link on Eden (must be signed in as the session owner) → confirmation card: items, total, merchant, card limit. If prices changed since quoting, show the diff and require re-confirmation.

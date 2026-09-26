@@ -84,6 +84,7 @@ Try it: `http://localhost:3000/https://www.joinfleek.com/collections/nike`
 
 - [Architecture](docs/ARCHITECTURE.md) — components, data flow, key decisions
 - [API reference](docs/API.md) — the public Eden API
+- [Grok Bot](docs/GROK_BOT.md): handing sessions to Grok Bot, its memory, MCP, and buying with the demo agent card
 - [Local development](docs/LOCAL_DEV.md): local Supabase (`make db`), env files, running things
 - [Database](docs/DATABASE.md): migration rules and what each migration added
 - [Deployment](docs/DEPLOYMENT.md): the VPS, Cloudflare Tunnel at `go.edenmatrix.xyz`, CI/CD, runbook

@@ -149,7 +149,7 @@ Done once, by hand. Paste secrets only into `gh secret set` prompts, never into 
 2. Add a public hostname: `go.edenmatrix.xyz` → service `HTTP` → `caddy:80`.
 3. The zone blocks AI bots at the edge, which would block Grok Bot. Add a WAF custom rule that skips that for
    this host's agent-facing paths only:
-   `(http.host eq "go.edenmatrix.xyz" and (starts_with(http.request.uri.path, "/v1/sessions/") or http.request.uri.path in {"/openapi.json" "/robots.txt" "/llms.txt"}))`
+   `(http.host eq "go.edenmatrix.xyz" and (starts_with(http.request.uri.path, "/v1/sessions/") or http.request.uri.path in {"/v1/mcp" "/openapi.json" "/robots.txt" "/llms.txt"}))`
 4. Check that managed robots.txt isn't adding disallow rules for this host.
 
 **Tailscale:** create an OAuth client with the Auth Keys (write) scope and tag `tag:ci`, and set

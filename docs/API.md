@@ -177,8 +177,9 @@ Status: `pending | confirmed | executing | completed | failed | cancelled | pric
 
 ## As implemented (`apps/api`)
 
-Everything above is implemented except purchase intents (the stretch goal). This section records the
-details the reference leaves open.
+Everything above is implemented. Purchases go through MCP with a demo card and a demo checkout rather than
+`POST /sessions/{code}/purchase-intents`; see [GROK_BOT.md](GROK_BOT.md). This section records the details
+the reference leaves open.
 
 - **Base URL:** `https://go.edenmatrix.xyz/v1` in production (same host as the web app, see
   [DEPLOYMENT.md](DEPLOYMENT.md)); `http://localhost:8000/v1` locally. `GET /v1/health` (liveness) and
@@ -226,6 +227,31 @@ details the reference leaves open.
   - Monthly `SCRAPE_MONTHLY_MAX` (Bright Data fetches, default 5000) and `JEV_MONTHLY_BUDGET_USD` (default $5),
     counted in `usage_counters`. Past the scrape cap, new scrapes get `503 budget_exhausted`; past the Jev budget,
     classification and ranking fall back to keywords and price.
-- **Extra error codes:** `503 budget_exhausted`, `404 product_not_found`, `404 ruleset_not_found`.
+- **Accounts** (`routers/account.py`, for the web app's `/dashboard`, not in the OpenAPI spec). All take the
+  shopper's Supabase JWT. Card, agent and webhook changes need a real account (`403 account_required` for
+  guests):
+  - `GET /me` returns the user, the card, connected agents and the Grok Bot webhook's host.
+  - `PUT /me/card` links the demo card or changes its limit (`{ "spend_cap": 200, "currency": "GBP" }`);
+    `DELETE /me/card` unlinks it.
+  - `POST /me/agents` returns a one-time agent token plus the MCP JSON for Grok Bot; `DELETE /me/agents/{id}`
+    revokes it.
+  - `PUT /me/grok-bot-webhook` (`{ "url", "key" }`, https and public addresses only) and `DELETE` manage it.
+  - `GET /me/sessions` lists past sessions, and works for guests too.
+- **Handoff:** `GET /sessions/{code}/grok` returns `grok_url`, `prompt` and `bot_prompt`, which is Grok Bot's
+  prompt and adds its session log on `/workspace`. `POST /sessions/{code}/send-to-grok-bot` posts
+  `{ source, prompt, session }` to the caller's Grok Bot automation.
+- **MCP** (`routers/mcp.py`): `POST /v1/mcp` uses Streamable HTTP with JSON responses. It is authenticated with an
+  agent token and offers `list_my_sessions`, `start_session`, `get_session`, `find_products`,
+  `create_purchase_intent` and `get_purchase_status`.
+- **Purchases** (`services/purchases.py`): `GET /purchase-intents/{id}`, `POST …/confirm` and `POST …/cancel`,
+  for the owner's JWT only. Confirm re-reads every product page first (`409 price_changed` with the new total).
+  It then issues the demo card (total + 5%, capped by the limit) and runs the demo checkout: `executing`, then
+  `completed` with an `EDEN-DEMO-…` order reference.
+- **Extra error codes:**
+  - `503 budget_exhausted`, `404 product_not_found`, `404 ruleset_not_found`.
+  - Accounts and agents: `403 account_required`, `404 agent_not_found`.
+  - Purchases: `400 no_card`, `400 over_spend_cap`, `400 no_price`, `400 mixed_currencies`,
+    `404 intent_not_found`, `409 intent_closed`, `409 out_of_stock`, `410 intent_expired`.
+  - Grok Bot webhook: `400 invalid_webhook`, `400 no_webhook`, `502 grok_bot_unreachable`.
 - **Auth:** Supabase JWTs (anonymous included) are verified against the project's JWKS (ES256/RS256), or against
   `SUPABASE_JWT_SECRET` for legacy HS256 projects.
