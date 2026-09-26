@@ -11,7 +11,8 @@
     "test:hard": "npx tsx scripts/test-hard-cases.ts",
     "test:battle": "npx tsx scripts/test-agent-battle.ts",
     "test:proxy": "npx tsx scripts/test-proxy.ts",
-    "test:eden": "npx tsx scripts/test-eden-api.ts"
+    "test:eden": "npx tsx scripts/test-eden-api.ts",
+    "test:conflicts": "npx tsx scripts/test-rule-conflicts.ts"
   },
   "dependencies": {
     "next": "16.3.6",

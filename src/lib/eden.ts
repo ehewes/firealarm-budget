@@ -11,6 +11,7 @@
 
 import { executeJevDecisions } from "./jev";
 import { transpileStorefront, TranspiledStorefront } from "./transpiler";
+import { evaluateProductWithPrecedence, calculateSafeCardLimit } from "./rule-resolver";
 
 export interface EdenRules {
   max_per_piece?: number;
@@ -185,56 +186,10 @@ export async function applyEdenRules(
   const filtered: EdenProductItem[] = [];
 
   for (const p of products) {
-    // 1. Hard Filter: Max per piece
-    if (rules.max_per_piece !== undefined && p.per_piece > rules.max_per_piece) {
+    // 4-Tier Precedence Evaluation (Vetoes take precedence over inclusions/discounts)
+    const evalResult = evaluateProductWithPrecedence(p, rules);
+    if (!evalResult.passed) {
       continue;
-    }
-
-    // 2. Hard Filter: Max total basket price
-    if (rules.max_total !== undefined && p.price > rules.max_total) {
-      continue;
-    }
-
-    // 3. Hard Filter: Minimum pieces in bundle/lot
-    if (rules.min_pieces !== undefined && p.pieces < rules.min_pieces) {
-      continue;
-    }
-
-    // 4. Hard Filter: Excluded categories
-    if (rules.exclude_categories && rules.exclude_categories.length > 0) {
-      const isExcluded = rules.exclude_categories.some((ex) => {
-        const target = ex.toLowerCase();
-        return (
-          p.title.toLowerCase().includes(target) ||
-          p.tree_path.some((seg) => seg.toLowerCase().includes(target))
-        );
-      });
-      if (isExcluded) continue;
-    }
-
-    // 5. Hard Filter: Included categories
-    if (rules.include_categories && rules.include_categories.length > 0) {
-      const isIncluded = rules.include_categories.some((inc) => {
-        const target = inc.toLowerCase();
-        return (
-          p.title.toLowerCase().includes(target) ||
-          p.tree_path.some((seg) => seg.toLowerCase().includes(target))
-        );
-      });
-      if (!isIncluded) continue;
-    }
-
-    // 6. Hard Filter: Grade match (e.g. "premium", "vintage")
-    if (rules.grades && rules.grades.length > 0) {
-      const gradeMatches = rules.grades.some((g) => {
-        const target = g.toLowerCase();
-        return (
-          p.grade?.toLowerCase().includes(target) ||
-          p.title.toLowerCase().includes(target) ||
-          p.tree_path.some((seg) => seg.toLowerCase().includes(target))
-        );
-      });
-      if (!gradeMatches) continue;
     }
 
     // Generate clear 'why' justification string
@@ -353,6 +308,9 @@ export function createPurchaseIntent(params: {
   const intentId = `pi_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const confirmUrl = `https://www.edenmatrix.com/confirm/${intentId}`;
 
+  const session = SESSIONS_STORE.get(params.sessionCode);
+  const safeLimit = calculateSafeCardLimit(params.quotedTotal, session?.rules?.max_total);
+
   const intent: PurchaseIntent = {
     intent_id: intentId,
     session_code: params.sessionCode,
@@ -362,7 +320,7 @@ export function createPurchaseIntent(params: {
     confirm_url: confirmUrl,
     card: {
       last4: "4417",
-      limit: Math.round(params.quotedTotal * 1.05 * 100) / 100, // 5% buffer for tax/shipping
+      limit: safeLimit, // Strictly enforces user's max_total cap at the virtual card level
       merchant: "joinfleek.com",
       expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min expiry
     },
