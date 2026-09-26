@@ -1,0 +1,32 @@
+# secrets: never commit. Production values live in GitHub secrets (docs/SECRETS.md).
+.env
+.env.*
+!.env.example
+apps/web/.env.local
+
+# node / next
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# supabase cli local state
+supabase/.branches/
+supabase/.temp/
+
+# workspace / tooling
+.context/
+.DS_Store
+._*
+*.log
+coverage/
+.coverage
