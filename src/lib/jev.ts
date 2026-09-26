@@ -6,11 +6,20 @@
  * - `noul`: Evaluates boolean assertions with true-probability (margin & risk gates)
  * - `score`: Evaluates ordinal rating scales
  *
- * Built-in Support:
- * - Configurable Seller & Buyer business rules
- * - Calibrated confidence tracking
- * - Automatic Grok System-2 Cascade triggers (when confidence < threshold)
+ * Built-in Defense:
+ * - Layer 1 Mathematical & Financial Guardrails (0ms fast path)
+ * - Regional sizing normalization (UK/EU -> US)
+ * - Semantic color synonym enrichment
+ * - Negative intent ("NOT" clause) protection
+ * - Out-of-stock detection and Grok substitution cascade
  */
+
+import {
+  validateAndSanitizePricing,
+  normalizeShoeSize,
+  enrichVariantAttributes,
+  extractExclusions,
+} from "./normalizer";
 
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
 export const DEFAULT_JEV_MODEL = "typesafe/jev-1.13";
@@ -70,9 +79,6 @@ export interface CascadeMetadata {
   escalationReason?: string;
 }
 
-/**
- * Seller Business Rules configuration
- */
 export interface SellerPolicyRules {
   maxDiscountPct?: number; // e.g. 15%
   minStockForDiscount?: number; // e.g. don't discount if stock < 5
@@ -125,8 +131,6 @@ export async function executeJevDecisions(
   }
 
   const data = await response.json();
-
-  // Normalize decisions output
   const rawDecisions = data.decisions || data.results || data;
   const decisions: Record<string, JevDecisionResult> = {};
 
@@ -159,9 +163,7 @@ export async function executeJevDecisions(
 }
 
 /**
- * 1. Variant Resolution Primitive (Choice) with Model Cascading
- * Resolves natural language user intent against raw variant options.
- * Flags Grok escalation if intent is ambiguous or top confidence < threshold.
+ * 1. Hardened Variant Resolution with Normalization, Negative Intent, and Stock Awareness
  */
 export async function resolveVariant(params: {
   userIntent: string;
@@ -182,29 +184,60 @@ export async function resolveVariant(params: {
   cascade: CascadeMetadata;
 }> {
   const threshold = params.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+
+  // Step 1: Regional size normalization (e.g. UK 9 -> US 10)
+  const { normalizedQuery, detectedRegionalSize } = normalizeShoeSize(params.userIntent);
+
+  // Step 2: Negative intent extraction (e.g. "NOT black or navy")
+  const { hasExclusions, excludedTerms } = extractExclusions(normalizedQuery);
+
+  // Step 3: Build enriched criteria with color family tags and inventory status
   const criteria: Record<string, string> = {};
+  const variantMap = new Map<string, (typeof params.variants)[0]>();
 
   for (const v of params.variants) {
-    const stockStatus =
-      v.available === false || v.inventoryQuantity === 0
-        ? " (Out of Stock)"
-        : v.inventoryQuantity !== undefined
-        ? ` (In Stock: ${v.inventoryQuantity})`
-        : " (In Stock)";
-    criteria[String(v.id)] = `${v.title}${v.price ? ` - $${v.price}` : ""}${stockStatus}`;
+    const vid = String(v.id);
+    variantMap.set(vid, v);
+
+    const isOOS = v.available === false || v.inventoryQuantity === 0;
+    const stockStatus = isOOS
+      ? " [OUT OF STOCK - 0 AVAILABLE]"
+      : v.inventoryQuantity !== undefined
+      ? ` [IN STOCK: ${v.inventoryQuantity}]`
+      : " [IN STOCK]";
+
+    // Enrich title with standard color families (e.g. Triple Noir -> Black)
+    const enrichedTitle = enrichVariantAttributes(v.title);
+    criteria[vid] = `${enrichedTitle}${v.price ? ` - $${v.price}` : ""}${stockStatus}`;
+  }
+
+  // Construct strict instructions handling exclusions and regional equivalents
+  let instructions =
+    "Select the exact variant ID that matches the buyer's specifications (size, color, style, availability).";
+
+  if (hasExclusions) {
+    instructions += ` CRITICAL NEGATIVE CONSTRAINT: The user explicitly demanded NO: [${excludedTerms.join(
+      ", "
+    )}]. You MUST NEVER select a variant containing these excluded attributes.`;
+  }
+
+  if (detectedRegionalSize) {
+    instructions += ` SIZING NOTE: User requested ${detectedRegionalSize.region} ${detectedRegionalSize.originalSize}, which equals US ${detectedRegionalSize.usEquivalent}.`;
   }
 
   const result = await executeJevDecisions({
     state: {
       product_title: params.productTitle,
-      user_request: params.userIntent,
-      variant_count: params.variants.length,
+      user_request: normalizedQuery,
+      original_request: params.userIntent,
+      excluded_terms: excludedTerms,
+      has_negative_constraint: hasExclusions,
+      detected_regional_sizing: detectedRegionalSize,
     },
     questions: {
       selected_variant: {
         type: "choice",
-        instructions:
-          "Which variant ID strictly matches the user's requested size, color, style, and availability? Return the exact matching variant ID.",
+        instructions,
         criteria,
       },
     },
@@ -212,25 +245,39 @@ export async function resolveVariant(params: {
 
   const decision = result.decisions.selected_variant;
   const variantId = String(decision.value);
+  const selectedVariantObj = variantMap.get(variantId);
 
-  // Extract calibrated confidence from probability or distribution
+  // Compute confidence
   let confidence = decision.confidence ?? decision.probability ?? 1.0;
   if (decision.distribution && decision.distribution[variantId] !== undefined) {
     confidence = decision.distribution[variantId];
   }
 
-  const shouldEscalateToGrok = confidence < threshold;
-  const escalationReason = shouldEscalateToGrok
-    ? `Low confidence match (${Math.round(confidence * 100)}% < ${Math.round(threshold * 100)}%). Customer intent may be ambiguous or requested variant is unavailable.`
-    : undefined;
+  // Out-of-Stock Protection: If the matched variant is out of stock, drop confidence and trigger Grok substitution
+  const isSelectedOOS =
+    selectedVariantObj &&
+    (selectedVariantObj.available === false || selectedVariantObj.inventoryQuantity === 0);
+
+  let shouldEscalateToGrok = confidence < threshold;
+  let escalationReason: string | undefined;
+
+  if (isSelectedOOS) {
+    shouldEscalateToGrok = true;
+    confidence = Math.min(confidence, 0.45); // Depress confidence because item cannot be purchased immediately
+    escalationReason = `Selected variant '${selectedVariantObj.title}' is currently Out of Stock. Escalate to Grok to offer nearest in-stock alternatives or backorder.`;
+  } else if (shouldEscalateToGrok) {
+    escalationReason = `Low confidence match (${Math.round(confidence * 100)}% < ${Math.round(
+      threshold * 100
+    )}%). Customer intent may be ambiguous or conflicting.`;
+  }
 
   return {
     variantId,
-    confidence,
+    confidence: Math.round(confidence * 100) / 100,
     distribution: decision.distribution,
     latencyMs: result.latencyMs,
     cascade: {
-      confidence,
+      confidence: Math.round(confidence * 100) / 100,
       confidenceThreshold: threshold,
       shouldEscalateToGrok,
       escalationReason,
@@ -239,13 +286,12 @@ export async function resolveVariant(params: {
 }
 
 /**
- * 2. Margin Evaluation Engine (Noul / Choice) with Policy Rules & Cascading
- * Evaluates whether an agent's counter-offer bid complies with merchant business rules.
+ * 2. Hardened Margin Evaluation with Layer 1 Guardrails and Tipping Support
  */
 export async function evaluateMargin(params: {
   basePrice: number;
   offeredPrice: number;
-  quantity: number;
+  quantity?: number;
   stockRemaining?: number;
   policy?: SellerPolicyRules;
   confidenceThreshold?: number;
@@ -264,8 +310,35 @@ export async function evaluateMargin(params: {
   const bulkQty = policy.bulkMinQuantity ?? 3;
   const bulkExtra = policy.bulkExtraDiscountPct ?? 5;
 
-  const unitDiscountPct =
-    ((params.basePrice - params.offeredPrice) / params.basePrice) * 100;
+  // LAYER 1 DEFENSE: Run mathematical and financial sanity checks first (0ms latency, zero tokens)
+  const sanity = validateAndSanitizePricing({
+    basePrice: params.basePrice,
+    offeredPrice: params.offeredPrice,
+    quantity: params.quantity,
+    stockRemaining: params.stockRemaining,
+  });
+
+  // If Layer 1 caught a definite outcome (e.g. Tipping, negative offer, or volume exploit)
+  if (sanity.immediateAction) {
+    const isAccepted = sanity.immediateAction === "accept";
+    return {
+      acceptable: isAccepted,
+      probability: isAccepted ? 1.0 : 0.0,
+      discountPct: sanity.effectiveDiscountPct,
+      latencyMs: 1, // 1ms instant evaluation
+      rulesEvaluated: [`Layer 1 Financial Guardrail: ${sanity.reason}`],
+      cascade: {
+        confidence: 1.0,
+        confidenceThreshold: threshold,
+        shouldEscalateToGrok: false,
+        escalationReason: undefined,
+      },
+    };
+  }
+
+  const effectiveDiscount = sanity.effectiveDiscountPct;
+  const safeQty = sanity.sanitizedQuantity;
+  const safeStock = params.stockRemaining ?? 25;
 
   // Build merchant rules summary
   const rulesEvaluated: string[] = [
@@ -275,21 +348,20 @@ export async function evaluateMargin(params: {
     ...(policy.customRules || []),
   ];
 
-  const statePayload = {
-    base_price_usd: params.basePrice,
-    offered_price_usd: params.offeredPrice,
-    quantity_ordered: params.quantity,
-    stock_remaining: params.stockRemaining ?? 25,
-    unit_discount_pct: Math.round(unitDiscountPct * 10) / 10,
-    max_allowed_discount_pct: maxDiscount,
-    min_stock_required: minStock,
-    bulk_min_quantity: bulkQty,
-    bulk_extra_discount_pct: bulkExtra,
-    policy_rules: rulesEvaluated,
-  };
-
+  // LAYER 2: Evaluate through Jev System-1
   const result = await executeJevDecisions({
-    state: statePayload,
+    state: {
+      base_price_usd: sanity.sanitizedBasePrice,
+      offered_price_usd: sanity.sanitizedOfferedPrice,
+      quantity_ordered: safeQty,
+      stock_remaining: safeStock,
+      unit_discount_pct: effectiveDiscount,
+      max_allowed_discount_pct: maxDiscount,
+      min_stock_required: minStock,
+      bulk_min_quantity: bulkQty,
+      bulk_extra_discount_pct: bulkExtra,
+      policy_rules: rulesEvaluated,
+    },
     questions: {
       is_acceptable_margin: {
         type: "noul",
@@ -303,19 +375,20 @@ export async function evaluateMargin(params: {
   const probability = decision.probability ?? (decision.value === true ? 1.0 : 0.0);
   const acceptable = probability >= 0.5;
 
-  // Confidence is distance from 0.5 (near 0.5 means highly borderline/uncertain)
-  // Normalizing |prob - 0.5| * 2 -> 0 to 1
+  // Calibrate confidence (distance from 0.5)
   const decisionConfidence = Math.abs(probability - 0.5) * 2;
   const shouldEscalateToGrok = decisionConfidence < (1 - threshold);
 
   const escalationReason = shouldEscalateToGrok
-    ? `Borderline negotiation offer (probability: ${Math.round(probability * 100)}%). Escalate to Grok to formulate an intelligent counter-proposal.`
+    ? `Borderline negotiation offer (probability: ${Math.round(
+        probability * 100
+      )}%). Escalate to Grok to formulate an intelligent counter-proposal.`
     : undefined;
 
   return {
     acceptable,
     probability,
-    discountPct: unitDiscountPct,
+    discountPct: effectiveDiscount,
     latencyMs: result.latencyMs,
     rulesEvaluated,
     cascade: {
@@ -328,8 +401,7 @@ export async function evaluateMargin(params: {
 }
 
 /**
- * 3. Pre-Flight Spend Risk Gate (Noul) with Cascading
- * Verifies final basket amount against hard spend caps and safety parameters.
+ * 3. Pre-Flight Spend Risk Gate (Noul)
  */
 export async function checkPreFlightRisk(params: {
   basketTotal: number;
