@@ -155,11 +155,7 @@ export function ConfirmView({ id }: { id: string }) {
             Eden demo card •••• {purchase.card.last4} · limit {money(purchase.card.limit, purchase.currency)}
           </p>
         )}
-        {purchase.status === "completed" && (
-          <p className="text-sm">
-            Order {purchase.order_ref}. This was a demo checkout: nothing was sent to the store or charged.
-          </p>
-        )}
+        {purchase.status === "completed" && <p className="text-sm">Order {purchase.order_ref}</p>}
         {purchase.error && <p className="text-sm text-zinc-500">{purchase.error}</p>}
         {open && (
           <>
