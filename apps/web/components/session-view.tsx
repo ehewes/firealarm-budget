@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { api, type Product, productsUrl, type Session, type TreeNode } from "@/lib/api";
+import { account, api, money, type Product, productsUrl, type Session, type TreeNode } from "@/lib/api";
 import { GROK_BOT_APP_URL, GROK_BOT_DOWNLOAD_URL } from "@/lib/config";
+import { existingToken } from "@/lib/supabase";
 
 const STATUS: Record<Session["status"], string> = {
   pending: "Queued…",
@@ -36,15 +37,6 @@ function failure(reason: string | null): string {
   return reason.charAt(0).toUpperCase() + reason.slice(1) + ".";
 }
 
-function money(amount: number | null, currency: string | null): string {
-  if (amount === null) return "";
-  try {
-    return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "USD" }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency ?? ""}`.trim();
-  }
-}
-
 /** The session page: live status and category tree while the scrape runs, then the handoff to Grok. */
 export function SessionView({ code }: { code: string }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -54,6 +46,9 @@ export function SessionView({ code }: { code: string }) {
   const [grokUrl, setGrokUrl] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean | null>(null);
+  // A connected Grok Bot automation takes the session with nothing to paste.
+  const [botToken, setBotToken] = useState<string | null>(null);
+  const [sent, setSent] = useState<"sending" | "sent" | string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Read after hydration: the server can't know the visitor's platform.
   const platform = useSyncExternalStore(unchanging, desktop, () => null);
@@ -77,7 +72,7 @@ export function SessionView({ code }: { code: string }) {
             setProducts(p.items);
             setTotal(p.total_matching);
             setGrokUrl(g.grok_url);
-            setPrompt(g.prompt);
+            setPrompt(g.bot_prompt);
           }
           return;
         }
@@ -89,6 +84,11 @@ export function SessionView({ code }: { code: string }) {
       timer = setTimeout(tick, 2000);
     };
     tick();
+    existingToken()
+      .then(async (token) => {
+        if (token && !stopped && (await account.me(token)).grok_bot_webhook) setBotToken(token);
+      })
+      .catch(() => undefined);
     return () => {
       stopped = true;
       clearTimeout(timer);
@@ -116,11 +116,28 @@ export function SessionView({ code }: { code: string }) {
   const copyPrompt = () => {
     if (prompt) navigator.clipboard.writeText(prompt).then(() => setCopied(true), () => setCopied(false));
   };
+  const paste = platform === "mac" ? "⌘V" : "Ctrl+V";
+
+  const sendToBot = async () => {
+    if (!botToken) return;
+    setSent("sending");
+    try {
+      await account.sendToGrokBot(botToken, code);
+      setSent("sent");
+    } catch (e) {
+      setSent(e instanceof Error ? e.message : "Couldn't reach your Grok Bot.");
+    }
+  };
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-6 py-10">
       <header className="flex flex-col gap-2">
-        <p className="text-sm uppercase tracking-widest text-zinc-500">Eden Matrix · {code}</p>
+        <p className="flex justify-between text-sm uppercase tracking-widest text-zinc-500">
+          <span>Eden Matrix · {code}</span>
+          <Link href="/dashboard" className="normal-case tracking-normal underline">
+            Account
+          </Link>
+        </p>
         <h1 className="text-3xl font-semibold">{session?.collection || session?.store || "Loading…"}</h1>
         <p className="text-zinc-600 dark:text-zinc-400">
           {session ? `${session.store} · ${session.product_count} products · ${STATUS[session.status]}` : "Loading session…"}
@@ -137,14 +154,24 @@ export function SessionView({ code }: { code: string }) {
 
       <section className="flex flex-col gap-3 rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
         <div className="flex flex-wrap items-center gap-3">
-          {platform && (
+          {botToken && (
+            <button
+              type="button"
+              onClick={sendToBot}
+              disabled={!ready || sent === "sending"}
+              className={`${button} ${ready ? primary : waiting}`}
+            >
+              {sent === "sending" ? "Sending…" : "Send to Grok Bot"}
+            </button>
+          )}
+          {platform && !botToken && (
             <a
               href={prompt ? GROK_BOT_APP_URL : undefined}
               onClick={copyPrompt}
               aria-disabled={!prompt}
               className={`${button} ${prompt ? primary : waiting}`}
             >
-              Open in Grok Bot
+              Copy prompt &amp; open Grok Bot
             </a>
           )}
           <a
@@ -152,14 +179,31 @@ export function SessionView({ code }: { code: string }) {
             target="_blank"
             rel="noopener"
             aria-disabled={!grokUrl}
-            className={`${button} ${!grokUrl ? waiting : platform ? secondary : primary}`}
+            className={`${button} ${!grokUrl ? waiting : platform || botToken ? secondary : primary}`}
           >
             Continue in Grok
           </a>
         </div>
+        {sent === "sent" && (
+          <p className="text-sm">
+            Sent. Your Grok Bot is on it and will log this session on its computer.{" "}
+            <a href={GROK_BOT_APP_URL} className="underline">
+              Open Grok Bot
+            </a>
+          </p>
+        )}
+        {sent && sent !== "sent" && sent !== "sending" && <p className="text-sm text-red-700 dark:text-red-300">{sent}</p>}
+        {platform && !botToken && copied === null && (
+          <p className="text-sm text-zinc-500">
+            Grok Bot can&apos;t take a prompt from a link, so this copies it: press {paste} in a new task.{" "}
+            <Link href="/dashboard" className="underline">
+              Send straight to Grok Bot instead
+            </Link>
+          </p>
+        )}
         {copied === true && (
           <p className="text-sm">
-            Prompt copied. Paste it into a new Grok Bot task ({platform === "mac" ? "⌘V" : "Ctrl+V"}). No Grok Bot yet?{" "}
+            Prompt copied. In Grok Bot, start a new task and press {paste}. No Grok Bot yet?{" "}
             <a href={GROK_BOT_DOWNLOAD_URL} target="_blank" rel="noopener" className="underline">
               Download it
             </a>
