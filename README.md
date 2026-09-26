@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Eden Matrix
 
-## Getting Started
+**Put our domain in front of any store URL and it becomes agent-ready.**
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+https://www.joinfleek.com/collections/nike
+        ↓ prefix it
+https://www.edenmatrix.com/https://www.joinfleek.com/collections/nike
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Eden Matrix scrapes the page, classifies every product into a category tree, and exposes it through a public API that Grok Bot uses to recommend — and, for signed-in users with a linked agent card, buy — against the user's own rules.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Built for the Cursor Commerce London Hackathon (Fleek HQ).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it works
 
-## Learn More
+1. **Prefix a store URL.** Eden starts a session and scrapes the page in the background (Bright Data), streaming a live category tree to the page.
+2. **Set your rules.** e.g. "Premium only, under $14/piece, no shorts". Guests' rules persist on their device; signed-in users can save rulesets.
+3. **Continue to Grok.** One click hands the session to Grok Bot. Grok queries the Eden API and recommends items that match your rules.
+4. **Buy (signed-in only).** Ask Grok to buy → it returns a confirmation link → you confirm on Eden → a single-use agent card is issued, locked to the amount and merchant → checkout runs.
 
-To learn more about Next.js, take a look at the following resources:
+| | Guest | Signed in |
+|---|---|---|
+| Prefix any store URL | ✅ | ✅ |
+| Rules on the continue page | ✅ (this device) | ✅ |
+| Recommendations via Grok | ✅ | ✅ |
+| Saved rulesets | — | ✅ |
+| Past sessions | — | ✅ |
+| Linked agent card + purchasing | — | ✅ |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Layer | Tech |
+|---|---|
+| Frontend | Next.js (App Router), Tailwind, shadcn/ui — Vercel |
+| API | FastAPI (Python) & Next.js Routes — Railway / Render / Fly |
+| Data & auth | Supabase — Postgres, anonymous + email auth, RLS, Realtime, Vault |
+| Scraping | Bright Data Web Unlocker |
+| Classification & ranking | Jev (TypeSafe AI) |
+| Agent | Grok Bot + Grok API (attribute extraction) |
+| Payments (stretch) | Agent card provider, Playwright checkout |
 
-## Deploy on Vercel
+## Docs
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Architecture](docs/ARCHITECTURE.md) — components, data flow, key decisions
+- [API reference](docs/API.md) — the public Eden API
+- [Hackathon plan](docs/PLAN.md) — owners, timeline, demo script
