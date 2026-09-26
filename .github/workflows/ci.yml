@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (ruff, pytest against local Supabase)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/api/requirements*.txt
+      - name: Install
+        working-directory: apps/api
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        working-directory: apps/api
+        run: |
+          ruff check .
+          ruff format --check .
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # A migration that does not apply from scratch fails here. Only the services the
+      # tests use start: Postgres, PostgREST, Auth and the gateway in front of them.
+      - name: Start local Supabase
+        run: supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Point the tests at it
+        run: |
+          eval "$(supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY|DB_URL)=')"
+          {
+            echo "TEST_SUPABASE_URL=$API_URL"
+            echo "TEST_SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "TEST_DATABASE_URL=$DB_URL"
+          } >> "$GITHUB_ENV"
+      - name: Test
+        working-directory: apps/api
+        # A missing database fails here instead of quietly skipping the db tests.
+        env:
+          REQUIRE_DB_TESTS: "1"
+        run: python -m pytest -q
+
+  web:
+    name: Web (lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: exists
+        run: echo "web=$([ -f apps/web/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.exists.outputs.web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - if: steps.exists.outputs.web == 'true'
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+      - if: steps.exists.outputs.web != 'true'
+        run: echo "apps/web does not exist yet; nothing to check."
+
+  migrations:
+    name: Migrations are append-only
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Editing or renaming an applied migration would never reach production (the CLI
+      # skips versions it has already applied), so only new files are allowed.
+      - run: |
+          changed=$(git diff --name-status "origin/${{ github.base_ref }}...HEAD" -- supabase/migrations | grep -v '^A' || true)
+          if [ -n "$changed" ]; then
+            echo "::error::Applied migrations must not change. Add a new numbered file instead:"
+            echo "$changed"
+            exit 1
+          fi
+
+  ci-ok:
+    name: CI OK
+    needs: [api, web, migrations]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          results='${{ toJSON(needs.*.result) }}'
+          echo "$results"
+          if echo "$results" | grep -Eq '"(failure|cancelled)"'; then exit 1; fi
+
+  # Deploys run from here rather than on `push` in deploy.yml, so the commit that ships is
+  # the one that went green, and only once the repo variable DEPLOY_ENABLED is 'true'.
+  deploy:
+    needs: ci-ok
+    if: >-
+      always() && needs.ci-ok.result == 'success' && github.event_name == 'push'
+      && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit

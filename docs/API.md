@@ -65,6 +65,24 @@ Create a session and start scraping (returns before the scrape finishes).
 }
 ```
 
+### `GET /sessions/{code}/brief`
+
+**Proposed, not yet implemented.** Entry point for Grok. The "Continue to Grok" link (`services/grok.py`) currently points Grok at `/products`; the plan is to point it here instead. The prefill message contains this URL, and Grok reads it with its browsing tool. Returns `text/markdown`: store, collection, rules, scrape status, the top picks with `why`, and links to filtered `/products` URLs for digging further. While the scrape is still `crawling`, it returns whatever products are ready plus a retry hint.
+
+```
+# Eden session EM-7K2Q9X4M — joinfleek.com / Nike Vintage Wholesale
+Status: ready · 25 products · rules: max $14/pc, premium only
+
+1. Premium Vintage Nike Baggy Pants — $128.00 (10 pcs, $12.78/pc)
+   Why: Premium grade; $12.78/pc under your $14 cap
+   https://www.joinfleek.com/products/…
+
+More: https://go.edenmatrix.xyz/v1/sessions/EM-7K2Q9X4M/products?category=bottoms
+Session page: https://go.edenmatrix.xyz/s/EM-7K2Q9X4M
+```
+
+All Grok-facing endpoints (`/brief`, `GET /sessions/{code}`, `/tree`, `/products`, `/products/{id}`) are plain `GET`s with the code in the path, need no auth header, and send `Cache-Control: no-store`, so a browsing tool can read them.
+
 ### `GET /sessions/{code}/tree`
 
 ```json
@@ -152,3 +170,40 @@ Status: `pending | confirmed | executing | completed | failed | cancelled | pric
 | 409 | `price_changed`, `out_of_stock` |
 | 429 | `rate_limited` |
 | 502 | `scrape_failed` |
+
+## As implemented (`apps/api`)
+
+Everything above is implemented except purchase intents (the stretch goal). This section records the
+details the reference leaves open.
+
+- **Base URL:** `https://go.edenmatrix.xyz/v1` in production (same host as the web app, see
+  [DEPLOYMENT.md](DEPLOYMENT.md)); `http://localhost:8000/v1` locally. `GET /v1/health` (liveness) and
+  `GET /v1/ready` (database reachable).
+- **`POST /sessions`** also takes `entry` (`prefix` | `widget`) and `referrer_origin` (widget only), and returns
+  `scrape_id` so the web app can subscribe to `products` over Realtime for the live tree. The URL may arrive with
+  `https:/` (collapsed slashes) or without a scheme; tracking parameters such as joinfleek's `click_source` are
+  stripped. A scrape of the same page from the last `SCRAPE_FRESH_MINUTES` is shared instead of re-fetched.
+- **Scrape pipeline** (`services/scraper.py`, a `BackgroundTask`):
+  1. `crawling`: fetch the listing through Bright Data Web Unlocker. Products are extracted from the page's own
+     JSON (joinfleek's `__NEXT_DATA__` items, including `units` and `pricePerUnit`) and inserted at once with a
+     keyword placement, so the live tree fills immediately.
+  2. Up to `MAX_PRODUCT_PAGES` product pages add brand, breadcrumbs and stock.
+  3. `classifying`: Jev places each product in the fixed tree, level by level: category, then type, then tier
+     (`premium` or `standard`). When Jev is unsure, the keyword placement stays.
+  4. `ready`.
+- **Tree:** the fixed taxonomy lives in `services/taxonomy.py`: tops, bottoms, outerwear, dresses, footwear,
+  accessories, mixed, each with its types.
+- **Rules** (`services/rules.py`) are applied in code. A product that can't be checked against a hard filter
+  (for example, no per-piece price under a `max_per_piece` rule) is excluded. `notes` rank the matches using Jev
+  yes/no scores, cached per session; without Jev, matches are ordered cheapest per piece. `why` is built only
+  from stored fields.
+- **`POST /rules/parse`** uses the Grok API when `GROK_API_KEY` is set. Otherwise it uses a deterministic parser
+  for phrasings like "premium only, under $14/piece, no shorts, at least 20 pieces".
+- **Limits:**
+  - `SESSIONS_PER_HOUR_PER_IP` / `SESSIONS_PER_HOUR_PER_USER` on `POST /sessions`, returning `429 rate_limited`.
+  - Monthly `SCRAPE_MONTHLY_MAX` (Bright Data fetches, default 5000) and `JEV_MONTHLY_BUDGET_USD` (default $5),
+    counted in `usage_counters`. Past the scrape cap, new scrapes get `503 budget_exhausted`; past the Jev budget,
+    classification and ranking fall back to keywords and price.
+- **Extra error codes:** `503 budget_exhausted`, `404 product_not_found`, `404 ruleset_not_found`.
+- **Auth:** Supabase JWTs (anonymous included) are verified against the project's JWKS (ES256/RS256), or against
+  `SUPABASE_JWT_SECRET` for legacy HS256 projects.

@@ -1,0 +1,28 @@
+# One origin for the web app and the API, so the browser never makes a cross-origin
+# call. TLS ends at Cloudflare; inside the box this is plain HTTP on :80.
+:80 {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# The API, its OpenAPI schema (what Grok Bot imports) and its docs.
+	@api path /v1/* /openapi.json /docs /docs/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# Before apps/web is deployed there is no `web` upstream, so say so plainly
+	# instead of a bare 502.
+	handle_errors 502 {
+		respond "Eden Matrix: the web app isn't deployed yet. The API is live at /v1 (docs at /docs)." 502
+	}
+}

@@ -1,0 +1,25 @@
+# Build context is the repo root for both images. Host-built (macOS) .venv and
+# node_modules would clobber the Linux ones installed in the image, and no .env may
+# ever be baked into a layer.
+.env
+.env.*
+**/.env
+**/.env.local
+
+.git
+.github
+.context
+docs
+supabase
+deploy/*.sh
+
+**/.venv
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.DS_Store
+**/._*
+apps/api/tests
