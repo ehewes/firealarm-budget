@@ -1,0 +1,54 @@
+# uv workspace root. It holds no code of its own: `uv sync` here installs every
+# Python member for local development and tests, while each Docker image syncs
+# only its own member (`uv sync --package eden-api`).
+[project]
+name = "firealarm-budget"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = ["eden-core", "eden-api"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    # FastAPI's TestClient runs on httpx.
+    "httpx>=0.27",
+    # Sync driver for test setup and assertions.
+    "psycopg[binary]>=3.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/core", "apps/api"]
+
+[tool.uv.sources]
+eden-core = { workspace = true }
+eden-api = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are meant to be called in argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["eden_core", "api", "scraper"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests", "apps/api/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# importlib mode because two services may both have a test_settings.py; the
+# default rootdir-based import would collide on the module name.
+addopts = "--import-mode=importlib"
+markers = [
+    "db: needs a Supabase Postgres (set TEST_DATABASE_URL, e.g. after `make db`)",
+]

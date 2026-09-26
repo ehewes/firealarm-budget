@@ -27,7 +27,7 @@ db-status: ## print local Supabase URLs and keys for .env
 	$(SUPABASE) status
 
 api: ## FastAPI on :8000, reloading on change
-	uv run uvicorn api.main:app --reload --port 8000
+	uv run uvicorn api.main:create_app --factory --reload --port 8000
 
 scraper: ## the scraper worker
 	uv run python -m scraper
