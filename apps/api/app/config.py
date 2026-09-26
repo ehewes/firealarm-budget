@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     fixtures_dir: str | None = None
     # Local development without a Bright Data key: fetch pages from this machine.
     direct_fetch: bool = False
+    # How long the demo checkout "takes" after a purchase is confirmed.
+    demo_checkout_seconds: float = 3.0
 
     @property
     def jev_key(self) -> str | None:

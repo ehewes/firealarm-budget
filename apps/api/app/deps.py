@@ -6,6 +6,7 @@ from supabase import AsyncClient
 from app.auth import AuthError, User
 from app.config import Settings
 from app.errors import EdenError
+from app.services import agents
 
 
 def get_settings(request: Request) -> Settings:
@@ -33,6 +34,33 @@ def current_user(user: User | None = Depends(optional_user)) -> User:
     if user is None:
         raise EdenError("unauthenticated", "Sign in (or refresh the page) and try again.", 401)
     return user
+
+
+def account_user(user: User = Depends(current_user)) -> User:
+    """A real account. Cards, agents and purchases are never for anonymous guests (rule 2)."""
+    if user.is_anonymous:
+        raise EdenError(
+            "account_required", "Create an Eden account first. Your sessions come with you.", 403
+        )
+    return user
+
+
+async def current_agent(
+    request: Request, authorization: str | None = Header(default=None)
+) -> agents.Agent:
+    """The agent behind an agent token (Authorization: Bearer em_agent_...)."""
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    agent = await agents.resolve(request.app.state.db, token)
+    if agent is None:
+        raise EdenError(
+            "unauthenticated",
+            "This agent isn't connected. Connect it from your Eden dashboard.",
+            401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return agent
 
 
 def client_ip(request: Request) -> str:

@@ -21,6 +21,7 @@ class AuthError(Exception):
 class User:
     id: str
     is_anonymous: bool
+    email: str | None = None
 
 
 class Verifier:
@@ -56,4 +57,8 @@ class Verifier:
             raise AuthError(str(exc)) from exc
         if claims.get("role") != "authenticated":
             raise AuthError("not a user token")
-        return User(id=str(claims["sub"]), is_anonymous=bool(claims.get("is_anonymous")))
+        return User(
+            id=str(claims["sub"]),
+            is_anonymous=bool(claims.get("is_anonymous")),
+            email=claims.get("email") or None,
+        )

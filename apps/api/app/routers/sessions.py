@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 from collections import defaultdict
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
@@ -25,10 +26,11 @@ from app.models import (
     TreeNode,
     TreeOut,
 )
+from app.services import grok
 from app.services import rules as rule_engine
 from app.services.extract import parse_product
 from app.services.fetch import BudgetExhausted, FetchError, get_page
-from app.services.grok import grok_prompt, grok_url
+from app.services.grok import grok_bot_prompt, grok_prompt, grok_url
 from app.services.jev import DecideError, Unavailable
 from app.services.scraper import run_scrape
 from app.services.sessions import can_purchase, create_session, load_session
@@ -312,10 +314,51 @@ async def refresh_product(
 async def grok_link(
     code: str, db: AsyncClient = Depends(get_db), settings: Settings = Depends(get_settings)
 ) -> JSONResponse:
-    """The Continue to Grok link, rebuilt with the collection name once the scrape has one, and
-    its prompt on its own for Grok Bot, whose app links can't carry one."""
+    """The Continue to Grok link, rebuilt with the collection name once the scrape has one;
+    its prompt; and Grok Bot's prompt, which also keeps a session log on the bot's computer.
+    Grok Bot's app links can't carry a prompt, so the session page copies it."""
     session, scrape = await load_session(db, code)
     where = {"code": session["code"], "store": scrape["domain"], "collection": scrape.get("title")}
     return JSONResponse(
-        {"grok_url": grok_url(settings, **where), "prompt": grok_prompt(settings, **where)}
+        {
+            "grok_url": grok_url(settings, **where),
+            "prompt": grok_prompt(settings, **where),
+            "bot_prompt": grok_bot_prompt(settings, **where),
+        }
     )
+
+
+@router.post("/{code}/send-to-grok-bot", include_in_schema=False)
+async def send_to_grok_bot(
+    code: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncClient = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    """Post the session to the caller's Grok Bot automation, so the bot starts on it."""
+    session, scrape = await load_session(db, code)
+    res = await db.table("bot_webhooks").select("*").eq("user_id", user.id).limit(1).execute()
+    if not res.data:
+        raise EdenError("no_webhook", "Connect a Grok Bot automation on your Eden dashboard first.")
+    webhook = res.data[0]
+    where = {"code": session["code"], "store": scrape["domain"], "collection": scrape.get("title")}
+    payload = {
+        "source": "eden-matrix",
+        "prompt": grok_bot_prompt(settings, **where),
+        "session": {
+            **where,
+            "session_url": _session_url(settings, session["code"]),
+            "products_url": f"{settings.api_base}/sessions/{session['code']}/products",
+        },
+    }
+    await grok.send_to_bot(
+        webhook["url"], webhook["secret"], payload, transport=request.app.state.webhook_transport
+    )
+    await (
+        db.table("bot_webhooks")
+        .update({"last_sent_at": datetime.now(UTC).isoformat()})
+        .eq("user_id", user.id)
+        .execute()
+    )
+    return JSONResponse({"sent": True})
