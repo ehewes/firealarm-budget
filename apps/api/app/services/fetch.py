@@ -7,11 +7,12 @@ those are detected and treated as failures rather than stored as the store's con
 """
 
 import asyncio
+import ipaddress
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from supabase import AsyncClient
@@ -65,33 +66,63 @@ class BrightDataFetcher:
 
 
 class DirectFetcher:
-    """Direct HTTP fallback with standard browser headers when Bright Data key is not configured."""
+    """Local development without a Bright Data key (DIRECT_FETCH=true): fetch from this machine.
 
-    def __init__(self, timeout: float = 15.0):
+    Never in production, where every fetch goes through Bright Data (the API refuses to
+    start with it set). Only public addresses are fetched, and every redirect is checked
+    again, so a pasted link can't point it at localhost, the LAN or a metadata endpoint.
+    """
+
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+    }
+
+    def __init__(self, *, timeout: float = 15.0, transport: httpx.AsyncBaseTransport | None = None):
         self._timeout = timeout
+        self._transport = transport
 
     async def fetch(self, url: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
-                res = await client.get(
-                    url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                        ),
-                        "Accept": (
-                            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                            "image/avif,image/webp,*/*;q=0.8"
-                        ),
-                        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-                    },
-                )
+            async with httpx.AsyncClient(
+                timeout=self._timeout, headers=self._HEADERS, transport=self._transport
+            ) as client:
+                for _ in range(5):
+                    await _require_public(url)
+                    res = await client.get(url)
+                    if not res.is_redirect:
+                        break
+                    url = urljoin(url, res.headers["location"])
+                else:
+                    raise FetchError("the store redirected too many times")
         except httpx.HTTPError as exc:
             raise FetchError(f"HTTP request failed: {type(exc).__name__}") from exc
         if res.status_code >= 400:
             raise FetchError(f"Store returned HTTP {res.status_code}")
         return _usable(res.text)
+
+
+async def _addresses(host: str) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, None)
+    return [info[4][0] for info in infos]
+
+
+async def _require_public(url: str) -> None:
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise FetchError("the store sent us to an address we don't fetch")
+    try:
+        addresses = await _addresses(parts.hostname)
+    except OSError as exc:
+        raise FetchError("the store's address didn't resolve") from exc
+    if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+        raise FetchError("the store's address isn't a public one")
 
 
 class FixtureFetcher:
@@ -111,12 +142,14 @@ class FixtureFetcher:
         return _usable(await asyncio.to_thread(path.read_text, encoding="utf-8"))
 
 
-def make_fetcher(settings: Settings) -> Fetcher:
+def make_fetcher(settings: Settings) -> Fetcher | None:
     if settings.fixtures_dir:
         return FixtureFetcher(settings.fixtures_dir)
     if settings.brightdata_api_key and settings.brightdata_unlocker_zone:
         return BrightDataFetcher(settings.brightdata_api_key, settings.brightdata_unlocker_zone)
-    return DirectFetcher()
+    if settings.direct_fetch:
+        return DirectFetcher()
+    return None
 
 
 def _usable(html: str) -> str:

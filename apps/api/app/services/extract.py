@@ -178,17 +178,15 @@ def _image(value: Any) -> str | None:
     if isinstance(value, str):
         return value or None
     if isinstance(value, list) and value:
-        first = value[0]
-        if isinstance(first, str):
-            return first
-        if isinstance(first, dict):
-            return _image(
-                first.get("url") or first.get("src") or first.get("path") or first.get("contentUrl")
-            )
+        return _image(value[0])
     if isinstance(value, dict):
-        for key in ("url", "src", "originalSrc", "contentUrl", "path"):
+        for key in ("url", "src", "originalSrc", "contentUrl"):
             if isinstance(value.get(key), str):
                 return value[key]
+        # A bare path is usually relative to a CDN we can't see (Zara's is), so only a full URL.
+        path = value.get("path")
+        if isinstance(path, str) and path.startswith(("https://", "http://", "//")):
+            return path
     return None
 
 
@@ -203,7 +201,9 @@ def _item(d: dict[str, Any], base: str, position: int) -> Item | None:
     title = next((d[k] for k in _NAME_KEYS if isinstance(d.get(k), str) and d[k].strip()), None)
     if not title:
         return None
-    href = next((d[k] for k in ("redirectUrl", "url", "href", "link") if isinstance(d.get(k), str)), None)
+    href = next(
+        (d[k] for k in ("redirectUrl", "url", "href", "link") if isinstance(d.get(k), str)), None
+    )
     slug = d.get("slug") or d.get("handle")
     if not href and slug:
         href = f"/products/{slug}"
@@ -227,10 +227,6 @@ def _item(d: dict[str, Any], base: str, position: int) -> Item | None:
         price = _number(offer.get("price")) or _number(offer.get("lowPrice"))
     if price is None:
         price = _number(d.get("priceRange")) or _number(d.get("displayPrice"))
-
-    # Convert Zara / minor units (e.g. 4995 for £49.95)
-    if price is not None and price >= 1000 and isinstance(d.get("price"), int) and price % 5 == 0:
-        price = round(price / 100.0, 2)
 
     unit = d.get("measurementUnit")
     unit = unit.strip().lower() if isinstance(unit, str) else unit
@@ -319,7 +315,7 @@ def _next_url(tree: HTMLParser, base: str) -> str | None:
 
 
 def _anchor_items(tree: HTMLParser, base: str) -> list[Item]:
-    """The fallback: product-looking links, titled from headings or alt text with price extraction."""
+    """The fallback: product-looking links, titled from alt text or headings, priced from tiles."""
     for noisy in tree.css("style, script, noscript, template"):
         noisy.decompose()
     items: dict[str, Item] = {}
@@ -387,93 +383,6 @@ def _anchor_items(tree: HTMLParser, base: str) -> list[Item]:
             ),
         )
     return list(items.values())
-
-
-def synthesize_storefront_listing(url: str) -> Listing:
-    """Resilient fallback when anti-bot challenges (Akamai/Cloudflare) block headless scraping.
-    Synthesizes authentic catalog items tailored to the storefront domain and category slug.
-    """
-    site = site_of(url)
-    brand = site.split(".")[0].upper()
-    path = urlsplit(url).path.strip("/").lower()
-    slug_parts = [
-        p
-        for p in re.split(r"[/_-]", path)
-        if len(p) > 2
-        and not p.isdigit()
-        and p not in ("html", "uk", "en", "us", "collections", "category", "c", "products", "item")
-    ]
-    keyword = " ".join(slug_parts[-2:]).title() if slug_parts else "Apparel Collection"
-
-    currency = (
-        "GBP"
-        if ".co.uk" in site or "/uk/" in url
-        else (
-            "EUR"
-            if any(tld in site for tld in (".es", ".fr", ".de", ".it")) or "/es/" in url
-            else "USD"
-        )
-    )
-
-    templates = [
-        (
-            f"{brand} {keyword} Tailored Overshirt",
-            49.99,
-            "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&auto=format&fit=crop",
-        ),
-        (
-            f"{brand} {keyword} Faux Leather Biker Jacket",
-            69.99,
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop",
-        ),
-        (
-            f"{brand} {keyword} Relaxed Heavyweight Hoodie",
-            45.00,
-            "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop",
-        ),
-        (
-            f"{brand} {keyword} Premium Cotton Tee",
-            22.50,
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop",
-        ),
-        (
-            f"{brand} {keyword} Casual Chino Trousers",
-            39.99,
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop",
-        ),
-        (
-            f"{brand} {keyword} Lightweight Windbreaker",
-            55.00,
-            "https://images.unsplash.com/photo-1544441893-675973e31985?w=800&auto=format&fit=crop",
-        ),
-    ]
-
-    items = []
-    clean_base = url.split("?")[0].rstrip("/")
-    for idx, (title, price, img) in enumerate(templates):
-        item_url = f"{clean_base}/item-{idx + 1}"
-        items.append(
-            Item(
-                title=title,
-                source_url=item_url,
-                external_id=f"syn_{brand.lower()}_{idx + 1}",
-                price=price,
-                compare_at_price=round(price * 1.25, 2),
-                per_piece=price,
-                pieces=1,
-                currency=currency,
-                image_url=img,
-                in_stock=True,
-                attrs={"position": idx, "brand": brand, "synthetic": True},
-            )
-        )
-
-    return Listing(
-        title=f"{brand} - {keyword}",
-        items=items,
-        total_items=len(items),
-        next_url=None,
-    )
 
 
 def parse_listing(html: str, url: str) -> Listing:
