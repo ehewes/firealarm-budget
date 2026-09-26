@@ -1,0 +1,26 @@
+# Build context hygiene. The context is the repo root for every image.
+# Host-built (macOS) .venv and node_modules would clobber the Linux ones installed
+# inside the image, and .env must never be baked into a layer.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.context
+docs
+supabase
+deploy
+
+**/.venv
+**/node_modules
+**/.next
+**/dist
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.DS_Store
+# macOS resource forks: they once crashed a migration runner on the VPS.
+**/._*
+apps/web/public/widget.js

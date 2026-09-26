@@ -1,0 +1,35 @@
+# secrets: never commit. Production values live in GitHub secrets (docs/secrets.md).
+.env
+.env.*
+!.env.example
+
+# node / next
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# build artefacts: widget.js is built into the web app's public/ at image build time
+apps/widget/dist/
+apps/web/public/widget.js
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# supabase cli local state
+supabase/.branches/
+supabase/.temp/
+
+# workspace / tooling
+.context/
+.DS_Store
+._*
+*.log
+coverage/
+.coverage
