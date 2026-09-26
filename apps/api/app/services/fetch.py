@@ -26,7 +26,7 @@ MAX_HTML = 2_000_000  # a page bigger than this is not a store page we can use
 # can mention these words further down.
 _CHALLENGE = re.compile(
     r"(just a moment|checking your browser|verify you are (a )?human|attention required"
-    r"|access denied|are you a robot|captcha)",
+    r"|access denied|are you a robot|captcha|bm-verify)",
     re.IGNORECASE,
 )
 
@@ -64,6 +64,36 @@ class BrightDataFetcher:
         return _usable(res.text)
 
 
+class DirectFetcher:
+    """Direct HTTP fallback with standard browser headers when Bright Data key is not configured."""
+
+    def __init__(self, timeout: float = 15.0):
+        self._timeout = timeout
+
+    async def fetch(self, url: str) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
+                res = await client.get(
+                    url,
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        "Accept": (
+                            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                            "image/avif,image/webp,*/*;q=0.8"
+                        ),
+                        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise FetchError(f"HTTP request failed: {type(exc).__name__}") from exc
+        if res.status_code >= 400:
+            raise FetchError(f"Store returned HTTP {res.status_code}")
+        return _usable(res.text)
+
+
 class FixtureFetcher:
     """Offline development and tests: serve saved HTML instead of calling Bright Data.
 
@@ -81,12 +111,12 @@ class FixtureFetcher:
         return _usable(await asyncio.to_thread(path.read_text, encoding="utf-8"))
 
 
-def make_fetcher(settings: Settings) -> Fetcher | None:
+def make_fetcher(settings: Settings) -> Fetcher:
     if settings.fixtures_dir:
         return FixtureFetcher(settings.fixtures_dir)
     if settings.brightdata_api_key and settings.brightdata_unlocker_zone:
         return BrightDataFetcher(settings.brightdata_api_key, settings.brightdata_unlocker_zone)
-    return None
+    return DirectFetcher()
 
 
 def _usable(html: str) -> str:
