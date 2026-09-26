@@ -10,7 +10,8 @@
     "test:jev": "node scripts/test-jev.mjs",
     "test:hard": "npx tsx scripts/test-hard-cases.ts",
     "test:battle": "npx tsx scripts/test-agent-battle.ts",
-    "test:proxy": "npx tsx scripts/test-proxy.ts"
+    "test:proxy": "npx tsx scripts/test-proxy.ts",
+    "test:eden": "npx tsx scripts/test-eden-api.ts"
   },
   "dependencies": {
     "next": "16.3.6",
