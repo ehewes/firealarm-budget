@@ -61,6 +61,17 @@ through the local JWKS automatically.
 synthetic pages built to the same shape as joinfleek's real markup, so the whole pipeline (extraction, the
 tree, rules) runs with no keys. Without `OPENROUTER_API_KEY`, Jev is skipped and keyword placement is used.
 
+**The web app** (`apps/web`) needs `apps/web/.env.local`:
+
+```sh
+NEXT_PUBLIC_API_URL=http://localhost:8000/v1
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<the local publishable key from make db-status>
+```
+
+The API's `WEB_ORIGIN` must be `http://localhost:3000` (its CORS allowlist). Local Supabase already allows anonymous
+sign-ins, which is how the prefix route signs guests in.
+
 Then try `http://localhost:3000/https://www.joinfleek.com/collections/nike`.
 
 ## Adding a migration
