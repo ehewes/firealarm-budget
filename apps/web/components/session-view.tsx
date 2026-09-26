@@ -13,6 +13,15 @@ const STATUS: Record<Session["status"], string> = {
   failed: "We couldn't read that page",
 };
 
+/** The scrape's reason for failing, as a sentence a shopper can act on. */
+function failure(reason: string | null): string {
+  if (!reason) return "Try again in a minute, or try another page from the same store.";
+  if (reason === "budget_exhausted") return "This month's scraping budget is spent. Try again next month.";
+  if (reason.includes("bot check")) return "The store blocked us with a bot check. Try again in a minute.";
+  if (reason.includes("no products")) return "We found no products on that page. Try a category or search results page.";
+  return reason.charAt(0).toUpperCase() + reason.slice(1) + ".";
+}
+
 function money(amount: number | null, currency: string | null): string {
   if (amount === null) return "";
   try {
@@ -87,6 +96,14 @@ export function SessionView({ code }: { code: string }) {
         <p className="text-zinc-600 dark:text-zinc-400">
           {session ? `${session.store} · ${session.product_count} products · ${STATUS[session.status]}` : "Loading session…"}
         </p>
+        {session?.status === "failed" && (
+          <p className="text-zinc-600 dark:text-zinc-400">
+            {failure(session.error)}{" "}
+            <Link href="/" className="underline">
+              Try another page
+            </Link>
+          </p>
+        )}
       </header>
 
       <section className="flex flex-col gap-3 rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">

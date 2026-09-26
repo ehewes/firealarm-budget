@@ -58,6 +58,9 @@ class SessionOut(BaseModel):
     store: str = Field(description="The store's domain")
     collection: str | None = Field(description="The page's title, e.g. Nike Vintage Wholesale")
     status: str = Field(description="pending, crawling, classifying, ready or failed")
+    error: str | None = Field(
+        None, description="Why the page couldn't be read, when status is failed"
+    )
     product_count: int
     snapshot_at: datetime = Field(description="When the page was scraped")
     rules: Rules

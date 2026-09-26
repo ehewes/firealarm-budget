@@ -65,6 +65,10 @@ Create a session and start scraping (returns before the scrape finishes).
 }
 ```
 
+When `status` is `failed`, `error` says why. Examples are `no products were found on that page`,
+`the store showed a bot check instead of the page` and `budget_exhausted`. The session page turns it into advice.
+Otherwise `error` is `null`.
+
 ### `GET /sessions/{code}/brief`
 
 **Proposed, not yet implemented.** Entry point for Grok. The "Continue to Grok" link (`services/grok.py`) currently points Grok at `/products`; the plan is to point it here instead. The prefill message contains this URL, and Grok reads it with its browsing tool. Returns `text/markdown`: store, collection, rules, scrape status, the top picks with `why`, and links to filtered `/products` URLs for digging further. While the scrape is still `crawling`, it returns whatever products are ready plus a retry hint.
