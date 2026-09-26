@@ -68,3 +68,15 @@ Work top-down; don't start a level until the one above works end-to-end.
 2. Rules + Grok Bot handoff + recommendations
 3. Session page, anonymous auth, saved rulesets, past sessions
 4. Purchase intents → confirm → card → checkout (dev store)
+
+## Infra and deploy
+
+Detail: `docs/DEPLOYMENT.md`, `docs/SECRETS.md`, `docs/LOCAL_DEV.md`, `docs/DATABASE.md`.
+
+- Production is the team VPS behind a Cloudflare Tunnel at `https://go.edenmatrix.xyz` (`edenmatrix.com` is not ours). Web at `/`, API at `/v1` on the same host, so `NEXT_PUBLIC_API_URL=https://go.edenmatrix.xyz/v1`.
+- **Secrets live in GitHub repository secrets**, never in the repo and never pasted into chat. The deploy workflow renders them onto the VPS. New secret → `env.example`, the deploy workflow, compose, `docs/SECRETS.md`.
+- **Never push to `main`.** Open a PR. Deploys run from `main` after CI, only when the repo variable `DEPLOY_ENABLED` is `true`.
+- **Spend caps:** `SCRAPE_MONTHLY_MAX` (5000 Bright Data fetches) and `JEV_MONTHLY_BUDGET_USD` ($5) are tracked in `usage_counters`. Every code path that scrapes or calls Jev checks them first.
+- **Migrations are additive:** add `supabase/migrations/000N_*.sql`, never edit an applied one, prove it with `make db-reset`.
+- The VPS is shared with other projects: touch only `/opt/firealarm-budget` and this compose project.
+- `make db` runs local Supabase in Docker (config in `supabase/config.toml`); `make help` lists the rest.
