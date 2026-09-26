@@ -12,6 +12,7 @@ about how the schema changes and what each migration added.
 | `0001_init.sql` | The core schema: scrapes, products, page cache, sessions, session picks, rulesets, card links, purchase intents, RLS, Realtime for the live tree |
 | `0002_entry_and_limits.sql` | Session entry gate and abuse fields, one default ruleset per user, monthly spend counters |
 | `0003_scrape_title_and_usage_fn.sql` | `scrapes.title` and `scrapes.updated_at`, and the `increment_usage` function |
+| `0004_agents_and_demo_cards.sql` | Agent tokens, Grok Bot webhooks, and the card and purchase fields the demo card flow shows |
 
 Rules:
 
@@ -68,3 +69,21 @@ for 10 minutes as `failed`, so no session page waits forever.
 **`increment_usage(key, amount)`**: adds to this month's counter and returns the new total in one statement,
 callable over the REST API by the service role only. The API calls it before every Bright Data fetch and after
 every Jev decision.
+
+## What 0004 added
+
+**`agent_links`**: the tokens a shopper's agent (Grok Bot) sends to `/v1/mcp`. Only the token's SHA-256
+(`token_hash`) and its last four characters (`token_hint`) are stored; the token itself is shown once. Revoking
+sets `revoked_at`. The owner can read their own rows; everything else goes through the API.
+
+**`bot_webhooks`**: one per user, the URL and key of their Grok Bot automation ("When a webhook fires"), where
+Send to Grok Bot posts a session. The key is a credential for the shopper's bot, so the table has RLS on and no
+policies: only the service role can read it.
+
+**`card_links.label`, `last4`, `currency`, `updated_at`**: what the dashboard and confirm page show. Card numbers
+are never stored. The demo provider holds no credentials, so its `credential_ref` points at no Vault secret.
+
+**`purchase_intents.merchant`, `currency`, `agent_link_id`, `card_limit`, `order_ref`, `completed_at`,
+`updated_at`**: the store, which agent asked, the issued card's limit, and the demo checkout's outcome. Statuses
+are 0001's: `pending`, then `price_changed` or `executing` (card issued), then `completed`, `failed` or
+`cancelled`.
