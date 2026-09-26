@@ -15,7 +15,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import User
+from app.auth import AuthError, User
 from app.config import Settings
 from app.main import create_app
 
@@ -23,17 +23,28 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 _TABLES = (
     "public.session_picks, public.purchase_intents, public.sessions, public.products, "
-    "public.scrapes, public.page_cache, public.usage_counters, public.rulesets, public.card_links"
+    "public.scrapes, public.page_cache, public.usage_counters, public.rulesets, public.card_links, "
+    "public.agent_links, public.bot_webhooks"
 )
+# Someone else with an account. Only ever reads, so needs no auth.users row.
+STRANGER_ID = "00000000-0000-4000-8000-000000000001"
 
 
 class FakeVerifier:
-    """Any bearer token is this (anonymous) user."""
+    """`Bearer account` is the test user after signing up; `Bearer stranger` is another
+    account; agent tokens aren't Supabase tokens at all; anything else is the test user as
+    an anonymous guest."""
 
     def __init__(self, user_id: str):
         self.user_id = user_id
 
     def verify(self, token: str) -> User:
+        if token.startswith("em_agent_"):
+            raise AuthError("not a JWT")
+        if token == "stranger":
+            return User(id=STRANGER_ID, is_anonymous=False, email="stranger@example.test")
+        if token == "account":
+            return User(id=self.user_id, is_anonymous=False, email="shopper@example.test")
         return User(id=self.user_id, is_anonymous=True)
 
 
@@ -64,7 +75,7 @@ def make_client(local_supabase):
     url, key, conn, user_id = local_supabase
     clients: list[TestClient] = []
 
-    def factory(fetcher=None, **overrides) -> TestClient:
+    def factory(fetcher=None, webhook_transport=None, **overrides) -> TestClient:
         settings = Settings(
             _env_file=None,
             supabase_url=url,
@@ -74,7 +85,7 @@ def make_client(local_supabase):
             allowed_domains="joinfleek.com",
             **overrides,
         )
-        app = create_app(settings, fetcher=fetcher)
+        app = create_app(settings, fetcher=fetcher, webhook_transport=webhook_transport)
         client = TestClient(app)
         client.__enter__()
         app.state.verifier = FakeVerifier(user_id)

@@ -3,7 +3,7 @@ import pytest
 from app.config import Settings
 from app.errors import EdenError
 from app.models import Rules
-from app.services.grok import grok_url
+from app.services.grok import grok_bot_prompt, grok_url
 from app.services.rules import merge, parse_text, passes, why, with_query
 from app.services.urls import canonical, normalize_prefix, require_allowed
 
@@ -100,3 +100,11 @@ def test_grok_link_points_at_the_products_endpoint():
     )
     assert url.startswith("https://grok.com/?q=")
     assert "go.edenmatrix.xyz%2Fv1%2Fsessions%2FEM-7K2Q9X4M%2Fproducts" in url
+
+
+def test_grok_bot_prompt_keeps_a_session_log_on_the_bots_computer():
+    settings = Settings(_env_file=None, web_origin="https://go.edenmatrix.xyz")
+    prompt = grok_bot_prompt(settings, code="EM-7K2Q9X4M", store="zara.com", collection="Shirts")
+    assert "https://go.edenmatrix.xyz/v1/sessions/EM-7K2Q9X4M/products" in prompt
+    assert "/workspace/eden-matrix/sessions.md" in prompt
+    assert "https://go.edenmatrix.xyz/s/EM-7K2Q9X4M" in prompt and "list_my_sessions" in prompt

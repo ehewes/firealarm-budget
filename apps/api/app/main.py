@@ -11,7 +11,7 @@ from supabase import acreate_client
 from app.auth import Verifier
 from app.config import Settings, get_settings
 from app.errors import EdenError, eden_error_handler
-from app.routers import health, rulesets, sessions
+from app.routers import account, health, mcp, purchases, rulesets, sessions
 from app.services.fetch import Fetcher, make_fetcher
 from app.services.jev import Jev
 from app.services.scraper import mark_interrupted
@@ -22,6 +22,7 @@ def create_app(
     *,
     fetcher: Fetcher | None = None,
     jev_transport: httpx.AsyncBaseTransport | None = None,
+    webhook_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -33,6 +34,7 @@ def create_app(
         app.state.verifier = Verifier(settings)
         app.state.fetcher = fetcher or make_fetcher(settings)
         app.state.jev = Jev(settings, db, transport=jev_transport)
+        app.state.webhook_transport = webhook_transport
         # Jev's note scores per (session, product): the same Grok conversation asks
         # for the shortlist repeatedly, and a score doesn't change within a session.
         app.state.note_scores = {}
@@ -59,7 +61,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.add_exception_handler(EdenError, eden_error_handler)
-    for module in (health, sessions, rulesets):
+    for module in (health, sessions, rulesets, account, purchases, mcp):
         app.include_router(module.router, prefix="/v1")
     return app
 

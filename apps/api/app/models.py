@@ -136,3 +136,103 @@ class RulesParseIn(BaseModel):
     text: str = Field(
         min_length=1, max_length=500, description='e.g. "premium only under 14 a piece"'
     )
+
+
+# ---------------------------------------------------------------- accounts, agents, cards
+
+
+class CardIn(BaseModel):
+    spend_cap: float = Field(gt=0, le=5000, description="The most a single purchase may cost")
+    currency: Literal["GBP", "USD", "EUR"] = "GBP"
+
+
+class CardOut(BaseModel):
+    provider: str = Field(description='"demo" until a real card provider is connected')
+    label: str | None
+    last4: str | None
+    spend_cap: float | None
+    currency: str
+
+
+class AgentIn(BaseModel):
+    name: str = Field("Grok Bot", min_length=1, max_length=60)
+
+
+class AgentOut(BaseModel):
+    id: UUID
+    name: str
+    token_hint: str = Field(description="The token's last 4 characters")
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class AgentCreated(AgentOut):
+    token: str = Field(description="Shown once: give it to your agent. Eden keeps only its hash")
+    mcp_url: str
+    mcp_config: dict = Field(description="Paste into Grok Bot's MCP servers JSON")
+
+
+class WebhookIn(BaseModel):
+    url: str = Field(max_length=500, pattern=r"^https://", description="The webhook's URL")
+    key: str = Field(min_length=8, max_length=500, description="The automation's webhook key")
+
+
+class WebhookOut(BaseModel):
+    host: str = Field(description="The webhook URL's host; the key is never shown again")
+    last_sent_at: datetime | None
+
+
+class MeOut(BaseModel):
+    id: UUID
+    email: str | None
+    is_anonymous: bool
+    card: CardOut | None
+    agents: list[AgentOut]
+    grok_bot_webhook: WebhookOut | None
+
+
+class PastSession(BaseModel):
+    code: str
+    store: str
+    collection: str | None
+    status: str
+    product_count: int
+    created_at: datetime
+    expires_at: datetime
+    session_url: str
+
+
+# ---------------------------------------------------------------- purchases
+
+
+class PurchaseItem(BaseModel):
+    id: UUID
+    title: str
+    price: float | None
+    currency: str | None
+    image_url: str | None
+    source_url: str
+    in_stock: bool | None
+
+
+class CardReady(BaseModel):
+    status: Literal["card_ready"] = "card_ready"
+    last4: str | None = Field(description="Never more than the last four digits")
+    limit: float | None = Field(description="The most the card will pay")
+
+
+class PurchaseOut(BaseModel):
+    id: UUID
+    status: str = Field(
+        description="pending, price_changed, executing, completed, failed or cancelled"
+    )
+    store: str | None
+    session_code: str | None
+    items: list[PurchaseItem]
+    total: float = Field(description="The total the shopper is asked to confirm")
+    currency: str | None
+    card: CardReady | None = Field(description="Set once the shopper has confirmed")
+    confirm_url: str = Field(description="Where the shopper confirms or cancels, on Eden")
+    expires_at: datetime
+    order_ref: str | None = Field(description="The demo checkout's order reference")
+    error: str | None

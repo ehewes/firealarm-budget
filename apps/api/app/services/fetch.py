@@ -98,7 +98,7 @@ class DirectFetcher:
                 timeout=self._timeout, headers=self._HEADERS, transport=self._transport
             ) as client:
                 for _ in range(5):
-                    await _require_public(url)
+                    await require_public(url)
                     res = await client.get(url)
                     if not res.is_redirect:
                         break
@@ -117,7 +117,8 @@ async def _addresses(host: str) -> list[str]:
     return [info[4][0] for info in infos]
 
 
-async def _require_public(url: str) -> None:
+async def require_public(url: str) -> None:
+    """FetchError unless every address the URL's host resolves to is a public one."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise FetchError("the store sent us to an address we don't fetch")

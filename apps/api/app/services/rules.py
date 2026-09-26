@@ -65,7 +65,7 @@ def passes(product: dict[str, Any], rules: Rules) -> bool:
     return not any(_mentions(product, c) for c in rules.exclude_categories)
 
 
-def _money(amount: Any, currency: str | None) -> str:
+def money(amount: Any, currency: str | None) -> str:
     symbol = {"USD": "$", "GBP": "£", "EUR": "€"}.get(currency or "", "")
     return (
         f"{symbol}{float(amount):.2f}"
@@ -83,15 +83,15 @@ def why(product: dict[str, Any], rules: Rules, score: float | None = None) -> st
         parts.append(f"{path[-1].capitalize()} grade")
     per_piece = product.get("per_piece")
     if rules.max_per_piece is not None and per_piece is not None:
-        cap = _money(rules.max_per_piece, currency)
-        parts.append(f"{_money(per_piece, currency)}/pc under your {cap} cap")
+        cap = money(rules.max_per_piece, currency)
+        parts.append(f"{money(per_piece, currency)}/pc under your {cap} cap")
     elif per_piece is not None:
-        parts.append(f"{_money(per_piece, currency)}/pc")
+        parts.append(f"{money(per_piece, currency)}/pc")
     if rules.min_pieces is not None and product.get("pieces"):
         parts.append(f"{product['pieces']} pieces (you wanted {rules.min_pieces}+)")
     if rules.max_total is not None and product.get("price") is not None:
-        within = _money(rules.max_total, currency)
-        parts.append(f"{_money(product['price'], currency)} total, within {within}")
+        within = money(rules.max_total, currency)
+        parts.append(f"{money(product['price'], currency)} total, within {within}")
     if rules.include_categories and len(path) >= 2:
         parts.append(f"{path[1]} in {path[0]}")
     if score is not None and rules.notes:
