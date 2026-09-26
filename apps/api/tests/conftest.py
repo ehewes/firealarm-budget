@@ -64,7 +64,7 @@ def make_client(local_supabase):
     url, key, conn, user_id = local_supabase
     clients: list[TestClient] = []
 
-    def factory(**overrides) -> TestClient:
+    def factory(fetcher=None, **overrides) -> TestClient:
         settings = Settings(
             _env_file=None,
             supabase_url=url,
@@ -74,7 +74,7 @@ def make_client(local_supabase):
             allowed_domains="joinfleek.com",
             **overrides,
         )
-        app = create_app(settings)
+        app = create_app(settings, fetcher=fetcher)
         client = TestClient(app)
         client.__enter__()
         app.state.verifier = FakeVerifier(user_id)

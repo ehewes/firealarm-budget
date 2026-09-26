@@ -40,6 +40,14 @@ near the web app.
 For scraping locally, set `BRIGHTDATA_API_KEY` and `BRIGHTDATA_UNLOCKER_ZONE`, and keep `ALLOWED_DOMAINS` short.
 Real fetches cost money and count against `SCRAPE_MONTHLY_MAX` in whatever database you point at.
 
+Without a Bright Data key, `DIRECT_FETCH=true` fetches pages straight from your machine instead. It only reaches
+public addresses, and it checks each redirect again. Stores with bot protection (Zara, most big retailers) will
+refuse it, so treat it as a way to try small stores. Production refuses to start with it set: every production
+fetch goes through Bright Data. With neither set, sessions fail with "scraping is not configured".
+
+A page with no products fails with that reason. It never falls back to placeholder products: everything a shopper
+or Grok sees has to come from the store.
+
 ## Running
 
 ```sh

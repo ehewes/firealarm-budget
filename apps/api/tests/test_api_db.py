@@ -74,6 +74,22 @@ def test_prefix_to_scrape_to_tree_to_products(make_client):
     assert again.json()["scrape_id"] == body["scrape_id"]
 
 
+class _NothingToList:
+    """A page that loads but lists nothing readable: an empty search, a bot wall, a blog."""
+
+    async def fetch(self, url: str) -> str:
+        return "<html><title>Shirts</title><body>" + "<p>Nothing here.</p>" * 100 + "</body></html>"
+
+
+def test_a_page_without_products_fails_instead_of_inventing_some(make_client):
+    factory, db, _ = make_client
+    client = factory(fetcher=_NothingToList())
+
+    code = _start(client).json()["code"]
+    assert client.get(f"/v1/sessions/{code}").json()["status"] == "failed"
+    assert db.execute("select count(*) as n from public.products").fetchone()["n"] == 0
+
+
 def test_guards(make_client):
     factory, db, user_id = make_client
     client = factory(sessions_per_hour_per_ip=2, scrape_monthly_max=100)

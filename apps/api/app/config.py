@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     # Offline development: serve pages from saved HTML instead of Bright Data.
     fixtures_dir: str | None = None
+    # Local development without a Bright Data key: fetch pages from this machine.
+    direct_fetch: bool = False
 
     @property
     def jev_key(self) -> str | None:
@@ -85,6 +87,8 @@ class Settings(BaseSettings):
             problems.append("SUPABASE_SERVICE_ROLE_KEY is not set")
         if self.fixtures_dir:
             problems.append("FIXTURES_DIR is set, so nothing would really be scraped")
+        if self.direct_fetch:
+            problems.append("DIRECT_FETCH is set; production fetches only through Bright Data")
         if not self.web_origin.startswith("https://"):
             problems.append("WEB_ORIGIN is not https")
         return problems
