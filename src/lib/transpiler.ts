@@ -8,6 +8,13 @@
  * and embeds direct RPC action endpoints (`/negotiate`, `/reserve`, `/checkout`).
  */
 
+import {
+  parseMessyPriceString,
+  cleanProductTitle,
+  resolveImageUrl,
+  normalizeMessyStorefront,
+} from "./messy-cleaner";
+
 export interface TranspiledVariant {
   id: string;
   title: string;
@@ -26,7 +33,7 @@ export interface TranspiledStorefront {
     name: string;
     domain: string;
     currency: string;
-    platform: "shopify" | "schema_org" | "opengraph" | "synthetic_demo";
+    platform: "shopify" | "schema_org" | "opengraph" | "html_microdata" | "synthetic_demo";
   };
   product: {
     id: string;
@@ -76,6 +83,228 @@ export function sanitizeTargetUrl(urlInput: string): string {
 }
 
 /**
+ * Universal HTML Parser
+ * Converts arbitrary raw HTML (Schema.org JSON-LD, OpenGraph, or plain DOM cards/tables)
+ * into a structured TranspiledStorefront contract.
+ */
+export function parseHtmlStorefront(html: string, targetUrlStr: string): TranspiledStorefront {
+  const cleanUrlString = sanitizeTargetUrl(targetUrlStr);
+  const targetUrl = new URL(cleanUrlString);
+  const rawHtmlBytes = html.length;
+
+  let productData: Record<string, unknown> | null = null;
+  let detectedPlatform: "schema_org" | "opengraph" | "html_microdata" = "html_microdata";
+
+  // 1. Search for <script type="application/ld+json">
+  const ldJsonMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  if (ldJsonMatches) {
+    for (const tag of ldJsonMatches) {
+      try {
+        const content = tag.replace(/<script[^>]*>|<\/script>/gi, "").trim();
+        const parsed = JSON.parse(content);
+        const candidates = Array.isArray(parsed)
+          ? parsed
+          : parsed["@graph"]
+          ? parsed["@graph"]
+          : [parsed];
+
+        for (const item of candidates) {
+          if (item["@type"] === "Product" || item["@type"]?.includes?.("Product")) {
+            productData = item;
+            detectedPlatform = "schema_org";
+            break;
+          }
+        }
+        if (productData) break;
+      } catch {
+        // ignore malformed JSON block
+      }
+    }
+  }
+
+  // 2. OpenGraph & Meta Tags extraction
+  const ogTitleMatch =
+    html.match(/<meta[^>]*property=["'](?:og:title|twitter:title)["'][^>]*content=["']([^"']+)["']/i) ||
+    html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["'](?:og:title|twitter:title)["']/i);
+  const ogPriceMatch = html.match(
+    /<meta[^>]*property=["'](?:product:price:amount|og:price:amount)["'][^>]*content=["']([^"']+)["']/i
+  );
+  const ogCurrencyMatch = html.match(
+    /<meta[^>]*property=["'](?:product:price:currency|og:price:currency)["'][^>]*content=["']([^"']+)["']/i
+  );
+  const ogImageMatch = html.match(
+    /<meta[^>]*property=["'](?:og:image|twitter:image)["'][^>]*content=["']([^"']+)["']/i
+  );
+  const ogDescMatch = html.match(
+    /<meta[^>]*property=["'](?:og:description|description)["'][^>]*content=["']([^"']+)["']/i
+  );
+
+  // 3. Fallback: Plain DOM HTML Extraction (Tables, Heading, Price Spans)
+  let domTitle: string | undefined;
+  let domPrice: string | undefined;
+  let domCurrency = "USD";
+  let domImage: string | undefined;
+  let domDesc: string | undefined;
+
+  const h1Match =
+    html.match(/<h1[^>]*class=["'][^"']*(?:title|product|name|heading)[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+    html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
+    html.match(/<title>([\s\S]*?)<\/title>/i);
+  if (h1Match) {
+    domTitle = cleanProductTitle(h1Match[1]);
+  }
+
+  // Currency detection from DOM
+  if (html.includes("€") || /eur\b/i.test(html)) {
+    domCurrency = "EUR";
+  } else if (html.includes("£") || /gbp\b/i.test(html)) {
+    domCurrency = "GBP";
+  } else if (html.includes("¥") || /jpy\b/i.test(html)) {
+    domCurrency = "JPY";
+  } else if (/\bchf\b/i.test(html)) {
+    domCurrency = "CHF";
+  } else if (/\bsek\b/i.test(html)) {
+    domCurrency = "SEK";
+  }
+
+  // Price detection from DOM:
+  // 1. Look for currency symbol with numbers (handles tags like <span class="currency">€</span><span class="price-value">156,00</span>)
+  const currencyWithNum =
+    html.match(/(?:[€£$¥]|EUR|GBP|USD|CHF|SEK)(?:<[^>]*>|\s)*(\d+(?:[.,]\d+)?)/i) ||
+    html.match(/(\d+(?:[.,]\d+)?)(?:<[^>]*>|\s)*(?:[€£$¥]|EUR|GBP|USD|CHF|SEK)/i);
+
+  // 2. Specific price elements
+  const specificPriceEl = html.match(
+    /<[^>]*class=["'][^"']*(?:price-value|price_value|product-price|current-price|price|amount|val)[^"']*["'][^>]*>([^<]+)<\/[^>]+>/i
+  );
+
+  if (currencyWithNum) {
+    domPrice = currencyWithNum[1];
+  } else if (specificPriceEl) {
+    domPrice = specificPriceEl[1].trim();
+  }
+
+  // Image detection from DOM: data-src or src
+  const imgMatch =
+    html.match(/data-src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["']/i) ||
+    html.match(/src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)["']/i);
+  if (imgMatch) {
+    domImage = imgMatch[1];
+  }
+
+  // Description detection from DOM
+  const descMatch =
+    html.match(/<div[^>]*class=["'][^"']*(?:desc|details|info)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+    html.match(/<p>([\s\S]*?)<\/p>/i);
+  if (descMatch) {
+    domDesc = descMatch[1];
+  }
+
+  // 4. Assemble the raw payload depending on what was found
+  let rawTitle = "";
+  let rawPrice: unknown = undefined;
+  let currency = "USD";
+  let rawDesc = "";
+  let rawImg: unknown = undefined;
+  let rawVariants: TranspiledVariant[] = [];
+
+  if (productData) {
+    detectedPlatform = "schema_org";
+    rawTitle = (productData.name || productData.title || ogTitleMatch?.[1] || domTitle || "") as string;
+    rawDesc = (productData.description || ogDescMatch?.[1] || domDesc || "") as string;
+    rawImg = productData.image || ogImageMatch?.[1] || domImage;
+
+    const offers = productData.offers;
+    if (Array.isArray(offers)) {
+      rawVariants = offers.map((o: Record<string, unknown>, i: number) => ({
+        id: String(o["@id"] || o.sku || `var_${i + 1}`),
+        title: cleanProductTitle(String(o.name || o.title || `${rawTitle} (${o.sku || `Option ${i + 1}`})`)),
+        price: parseMessyPriceString(o.price || o.lowPrice),
+        available: o.availability ? !String(o.availability).includes("OutOfStock") : true,
+        sku: String(o.sku || `SKU-${i + 1}`),
+      }));
+      rawPrice = rawVariants[0]?.price || 0;
+      currency = String((offers[0] as Record<string, unknown>)?.priceCurrency || "USD");
+    } else if (offers && typeof offers === "object") {
+      const o = offers as Record<string, unknown>;
+      rawPrice = o.price || o.lowPrice || o.highPrice;
+      currency = String(o.priceCurrency || "USD");
+    }
+  } else if (ogTitleMatch || ogPriceMatch) {
+    detectedPlatform = "opengraph";
+    rawTitle = ogTitleMatch?.[1] || domTitle || "";
+    rawPrice = ogPriceMatch?.[1] || domPrice;
+    currency = ogCurrencyMatch?.[1] || domCurrency;
+    rawDesc = ogDescMatch?.[1] || domDesc || "";
+    rawImg = ogImageMatch?.[1] || domImage;
+  } else {
+    detectedPlatform = "html_microdata";
+    rawTitle = domTitle || "";
+    rawPrice = domPrice;
+    currency = domCurrency;
+    rawDesc = domDesc || "";
+    rawImg = domImage;
+  }
+
+  // 5. Normalize through Messy Healer
+  const healed = normalizeMessyStorefront(
+    {
+      title: rawTitle,
+      price: rawPrice,
+      currency,
+      description: rawDesc,
+      image: rawImg,
+      variants: rawVariants.length > 0 ? rawVariants : undefined,
+    },
+    cleanUrlString
+  );
+
+  const transpiledBytes = JSON.stringify(healed).length + 800;
+  const domain = targetUrl.hostname;
+  const storeName = domain.replace(/^www\./, "").split(".")[0].toUpperCase();
+
+  return {
+    protocol: "commerce/1.0",
+    transpiled_from: cleanUrlString,
+    timestamp: new Date().toISOString(),
+    store: {
+      name: storeName,
+      domain,
+      currency: healed.currency || currency,
+      platform: detectedPlatform,
+    },
+    product: {
+      id: healed.id,
+      title: healed.title,
+      description: healed.description,
+      base_price: healed.base_price,
+      currency: healed.currency || currency,
+      variants: healed.variants,
+      deep_links: {
+        original_url: cleanUrlString,
+      },
+    },
+    rpc: {
+      negotiate: "/api/rpc/negotiate",
+      reserve: "/api/rpc/reserve",
+      checkout: "/api/rpc/checkout",
+      evaluate_bundle: "/api/bundle/evaluate",
+    },
+    telemetry: {
+      raw_html_bytes: rawHtmlBytes,
+      transpiled_bytes: transpiledBytes,
+      estimated_raw_tokens: Math.round(rawHtmlBytes / 4),
+      transpiled_tokens: Math.round(transpiledBytes / 4),
+      token_compression_ratio: `${(
+        (1 - transpiledBytes / Math.max(1, rawHtmlBytes)) *
+        100
+      ).toFixed(1)}% tokens saved`,
+      latency_ms: 12,
+    },
+  };
+}
+
+/**
  * 1. Shopify Deterministic Ingestor
  * Queries Shopify's native `.json` endpoint directly
  */
@@ -83,13 +312,11 @@ async function tryShopifyIngestion(targetUrl: URL): Promise<{
   data?: Record<string, unknown>;
   rawBytes: number;
 } | null> {
-  // Pattern: /products/some-product-handle
   const path = targetUrl.pathname;
   if (!path.includes("/products/")) {
     return null;
   }
 
-  // Append .json to product path: /products/shoe -> /products/shoe.json
   const cleanPath = path.replace(/\.json$/, "");
   const shopifyJsonUrl = `${targetUrl.origin}${cleanPath}.json`;
 
@@ -99,7 +326,7 @@ async function tryShopifyIngestion(targetUrl: URL): Promise<{
         "User-Agent": "Mozilla/5.0 (compatible; AgentGatewayBot/1.0; +https://agent-gateway.dev)",
         "Accept": "application/json",
       },
-      next: { revalidate: 300 }, // cache 5 min
+      next: { revalidate: 300 },
     });
 
     if (!res.ok) return null;
@@ -117,16 +344,10 @@ async function tryShopifyIngestion(targetUrl: URL): Promise<{
 }
 
 /**
- * 2. Schema.org / JSON-LD HTML Ingestor
- * Extracts microdata scripts and OpenGraph tags from generic websites
+ * 2. Schema.org / JSON-LD / HTML Ingestor
+ * Queries target URL and passes HTML to universal parser
  */
-async function tryHtmlIngestion(targetUrl: string): Promise<{
-  productData?: Record<string, unknown>;
-  rawHtmlBytes: number;
-  ogTitle?: string;
-  ogPrice?: number;
-  ogCurrency?: string;
-} | null> {
+async function tryHtmlIngestion(targetUrl: string): Promise<TranspiledStorefront | null> {
   try {
     const res = await fetch(targetUrl, {
       headers: {
@@ -136,47 +357,9 @@ async function tryHtmlIngestion(targetUrl: string): Promise<{
       },
     });
 
+    if (!res.ok) return null;
     const html = await res.text();
-    const rawHtmlBytes = html.length;
-
-    // Search for <script type="application/ld+json">
-    const ldJsonMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-
-    if (ldJsonMatches) {
-      for (const tag of ldJsonMatches) {
-        try {
-          const content = tag.replace(/<script[^>]*>|<\/script>/gi, "").trim();
-          const parsed = JSON.parse(content);
-
-          // Support single Product object or graph
-          const candidates = Array.isArray(parsed)
-            ? parsed
-            : parsed["@graph"]
-            ? parsed["@graph"]
-            : [parsed];
-
-          for (const item of candidates) {
-            if (item["@type"] === "Product" || item["@type"]?.includes?.("Product")) {
-              return { productData: item, rawHtmlBytes };
-            }
-          }
-        } catch {
-          // ignore malformed JSON block
-        }
-      }
-    }
-
-    // Fallback: OpenGraph tags
-    const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-    const ogPriceMatch = html.match(/<meta[^>]*property=["'](?:product:price:amount|og:price:amount)["'][^>]*content=["']([^"']+)["']/i);
-    const ogCurrencyMatch = html.match(/<meta[^>]*property=["'](?:product:price:currency|og:price:currency)["'][^>]*content=["']([^"']+)["']/i);
-
-    return {
-      rawHtmlBytes,
-      ogTitle: ogTitleMatch?.[1],
-      ogPrice: ogPriceMatch ? parseFloat(ogPriceMatch[1]) : undefined,
-      ogCurrency: ogCurrencyMatch?.[1] || "USD",
-    };
+    return parseHtmlStorefront(html, targetUrl);
   } catch {
     return null;
   }
@@ -357,65 +540,10 @@ export async function transpileStorefront(rawUrl: string): Promise<TranspiledSto
     };
   }
 
-  // 2. Try Schema.org / HTML
+  // 2. Try Schema.org / OpenGraph / HTML Microdata
   const htmlResult = await tryHtmlIngestion(cleanUrlString);
-  if (htmlResult && htmlResult.productData) {
-    const p = htmlResult.productData as Record<string, unknown>;
-    const offers = (p.offers as Record<string, unknown>) || {};
-    const price = parseFloat(String(offers.price || htmlResult.ogPrice || "100"));
-    const currency = String(offers.priceCurrency || htmlResult.ogCurrency || "USD");
-
-    const rawBytes = htmlResult.rawHtmlBytes;
-    const variants: TranspiledVariant[] = [
-      {
-        id: "variant_default",
-        title: "Standard",
-        price,
-        available: true,
-        inventoryQuantity: 10,
-      },
-    ];
-
-    const transpiledBytes = 1200;
-    return {
-      protocol: "commerce/1.0",
-      transpiled_from: cleanUrlString,
-      timestamp: new Date().toISOString(),
-      store: {
-        name: targetUrl.hostname.replace(/^www\./, "").split(".")[0].toUpperCase(),
-        domain: targetUrl.hostname,
-        currency,
-        platform: "schema_org",
-      },
-      product: {
-        id: String(p["@id"] || "prod_schema"),
-        title: String(p.name || htmlResult.ogTitle || "Product"),
-        description: String(p.description || "").slice(0, 300),
-        base_price: price,
-        currency,
-        variants,
-        deep_links: {
-          original_url: cleanUrlString,
-        },
-      },
-      rpc: {
-        negotiate: "/api/rpc/negotiate",
-        reserve: "/api/rpc/reserve",
-        checkout: "/api/rpc/checkout",
-        evaluate_bundle: "/api/bundle/evaluate",
-      },
-      telemetry: {
-        raw_html_bytes: rawBytes,
-        transpiled_bytes: transpiledBytes,
-        estimated_raw_tokens: Math.round(rawBytes / 4),
-        transpiled_tokens: Math.round(transpiledBytes / 4),
-        token_compression_ratio: `${(
-          (1 - transpiledBytes / Math.max(1, rawBytes)) *
-          100
-        ).toFixed(1)}% tokens saved`,
-        latency_ms: Date.now() - startTime,
-      },
-    };
+  if (htmlResult) {
+    return htmlResult;
   }
 
   // 3. Fallback: Guaranteed synthetic demonstration data

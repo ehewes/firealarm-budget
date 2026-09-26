@@ -12,6 +12,11 @@
 import { executeJevDecisions } from "./jev";
 import { transpileStorefront, TranspiledStorefront } from "./transpiler";
 import { evaluateProductWithPrecedence, calculateSafeCardLimit } from "./rule-resolver";
+import {
+  extractLotPieceCount,
+  cleanProductTitle,
+  resolveImageUrl,
+} from "./messy-cleaner";
 
 export interface EdenRules {
   max_per_piece?: number;
@@ -228,26 +233,36 @@ export async function createEdenSession(params: {
   const rules = params.rules || {};
   const transpiled = await transpileStorefront(params.url);
 
-  // Generate realistic wholesale / retail pieces & per_piece
+  // Discover buried lot / pieces count from product title & description
+  const naturalLotPieces = extractLotPieceCount(
+    transpiled.product.title,
+    transpiled.product.description
+  );
+
   const rawProducts: EdenProductItem[] = [];
 
   for (let i = 0; i < Math.max(transpiled.product.variants.length, 5); i++) {
     const v = transpiled.product.variants[i % transpiled.product.variants.length];
-    const pieces = [10, 15, 20, 25, 1][i % 5];
-    const totalLotPrice = v.price > 0 ? v.price : 120.0;
+    const variantPieces = extractLotPieceCount(v.title);
+    const pieces = variantPieces > 1 ? variantPieces : (naturalLotPieces > 1 ? naturalLotPieces : 1);
+    const totalLotPrice = v.price > 0 ? v.price : (transpiled.product.base_price > 0 ? transpiled.product.base_price : 120.0);
     const perPiece = Math.round((totalLotPrice / pieces) * 100) / 100;
     const grade = i % 2 === 0 ? "premium" : "grade-a";
     const treePath = await determineTreePath(v.title || transpiled.product.title);
 
     rawProducts.push({
       id: `prod_${code.toLowerCase()}_${i + 1}`,
-      title: `${grade.toUpperCase()} ${transpiled.product.title} (${v.title})`,
+      title: cleanProductTitle(`${grade.toUpperCase()} ${transpiled.product.title} (${v.title})`),
       price: totalLotPrice,
       per_piece: perPiece,
       pieces,
       currency: transpiled.product.currency || "USD",
       tree_path: treePath,
-      image_url: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&auto=format&fit=crop",
+      image_url: resolveImageUrl(
+        v.options?.image,
+        params.url,
+        treePath[0]
+      ),
       source_url: params.url,
       grade,
       in_stock: v.available,

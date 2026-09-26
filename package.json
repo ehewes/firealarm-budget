@@ -12,7 +12,9 @@
     "test:battle": "npx tsx scripts/test-agent-battle.ts",
     "test:proxy": "npx tsx scripts/test-proxy.ts",
     "test:eden": "npx tsx scripts/test-eden-api.ts",
-    "test:conflicts": "npx tsx scripts/test-rule-conflicts.ts"
+    "test:conflicts": "npx tsx scripts/test-rule-conflicts.ts",
+    "test:layouts": "npx tsx scripts/test-messy-layouts.ts",
+    "test:nasty": "npx tsx scripts/test-nasty-websites.ts"
   },
   "dependencies": {
     "next": "16.3.6",
