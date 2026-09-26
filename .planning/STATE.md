@@ -43,13 +43,13 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Rename `env.example` → `.env.example` (README quick start expects it) once teammate confirms their infra agent isn't editing env files.
+- Write a short demo script once Phase 2 works.
 
 ### Blockers/Concerns
 
 - Grok handoff plan: prefill link (`grok.com/?q=...`, format unconfirmed) carrying the `/brief` URL. Unverified that Grok's browsing fetches our URL — 5-min test: paste a public JSON URL into Grok. If it fails, ask sponsor about tool registration / MCP.
 - Cloudflare Bot Fight Mode / WAF challenge must be off for the API hostname, and tunnel must use a stable named hostname (teammate's infra).
-- `docs/PLAN.md` duplicates ARCHITECTURE.md — day plan / demo script missing.
 - Ownership boundary with teammate's infra agent: agree who owns `app/services/scraper.py` and `.env`.
 
 ## Deferred Items

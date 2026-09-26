@@ -51,8 +51,7 @@ eden-matrix/
 │   └── migrations/   # SQL schema + RLS
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── API.md
-│   └── PLAN.md       # hackathon day plan + demo script
+│   └── API.md
 ├── CLAUDE.md         # context for AI coding assistants
 └── .env.example
 ```
@@ -85,11 +84,11 @@ Try it: `http://localhost:3000/https://www.joinfleek.com/collections/nike`
 
 - [Architecture](docs/ARCHITECTURE.md) — components, data flow, key decisions
 - [API reference](docs/API.md) — the public Eden API
-- [Hackathon plan](docs/PLAN.md) — owners, timeline, demo script
 - [Local development](docs/LOCAL_DEV.md): local Supabase (`make db`), env files, running things
 - [Database](docs/DATABASE.md): migration rules and what each migration added
 - [Deployment](docs/DEPLOYMENT.md): the VPS, Cloudflare Tunnel at `go.edenmatrix.xyz`, CI/CD, runbook
 - [Secrets](docs/SECRETS.md): every GitHub secret and variable, and how to set or rotate one
+- [Roadmap](.planning/ROADMAP.md) — build phases and progress
 
 ## Team
 

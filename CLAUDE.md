@@ -6,7 +6,7 @@ Context for AI coding assistants working in this repo. Read this before making c
 
 Eden Matrix: prefix any store URL (`edenmatrix.com/<store-url>`) → we scrape it, classify products into a tree, and expose it through a public REST API that Grok Bot calls to recommend and (for signed-in users) buy within the user's rules. One-day hackathon build — favour working and simple over clever.
 
-Full detail: `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/PLAN.md`.
+Full detail: `docs/ARCHITECTURE.md`, `docs/API.md`. Plan and progress: `.planning/ROADMAP.md`, `.planning/STATE.md`.
 
 ## Layout
 
@@ -81,48 +81,6 @@ Detail: `docs/DEPLOYMENT.md`, `docs/SECRETS.md`, `docs/LOCAL_DEV.md`, `docs/DATA
 - The VPS is shared with other projects: touch only `/opt/firealarm-budget` and this compose project.
 - `make db` runs local Supabase in Docker (config in `supabase/config.toml`); `make help` lists the rest.
 
-<!-- GSD:project-start source:PROJECT.md -->
-## Project
-
-**Eden Matrix**
-
-Prefix any store URL (`edenmatrix.com/<store-url>`) and Eden Matrix scrapes the page, classifies every product into a category tree, and exposes it through a public REST API. Grok Bot calls that API to recommend products within the user's own rules and, for signed-in users with a linked agent card, to buy them after explicit confirmation on Eden. Built in one day for the Cursor Commerce London Hackathon (Fleek HQ); demo store is `joinfleek.com`.
-
-**Core Value:** Prefixing a store URL produces a live category tree and a rules-filtered, ranked product list that Grok Bot can query over HTTP. If everything else fails, this must work.
-
-### Constraints
-
-- **Timeline**: One day — favour working and simple over clever; work priorities top-down, no level started until the one above works end-to-end.
-- **Tech stack**: Next.js App Router + TS + Tailwind + shadcn/ui (`apps/web`); FastAPI + Pydantic v2, async httpx (`apps/api`); Supabase Postgres/Auth/Realtime/Vault.
-- **Security**: Card data never in any LLM prompt/response; nothing purchased without a confirmed intent from the signed-in owner; session code can never spend money; secrets only in `apps/api`.
-- **Data integrity**: Prices, titles, images shown to users come from the DB, never model text; re-check price/stock before issuing a card (`409 price_changed`).
-- **Scraping**: Allowlisted domains only; cache every page in `page_cache`.
-<!-- GSD:project-end -->
-
-<!-- GSD:stack-start source:STACK.md -->
-## Technology Stack
-
-Technology stack not yet documented. Will populate after codebase mapping or first phase.
-<!-- GSD:stack-end -->
-
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
-
-Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
-
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-## Architecture
-
-Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
-
-<!-- GSD:skills-start source:skills/ -->
-## Project Skills
-
-No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
-
 <!-- GSD:workflow-start source:GSD defaults -->
 ## GSD Workflow Enforcement
 
@@ -135,10 +93,3 @@ Use these entry points:
 
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
