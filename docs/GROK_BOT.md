@@ -26,7 +26,7 @@ On the session page (`/s/<code>`), once the page has been read:
 | **Send to Grok Bot** | a Grok Bot automation connected on `/dashboard` | Eden posts the session to the automation's webhook and the bot starts on it |
 | **Copy prompt & open Grok Bot** | a desktop with Grok Bot | copies the prompt, opens `grokbot://app/v1/open`; the shopper presses ⌘V in a new task |
 | **Continue in Grok** | nothing | opens `grok.com/?q=<prompt>`, prefilled |
-| (just ask) | the Eden MCP connected | "What have I been shopping for on Eden?" The bot calls `list_my_sessions` |
+| (just ask) | the Eden MCP connected to Grok Bot or grok.com | "What have I been shopping for on Eden?" Grok calls `list_my_sessions` |
 
 The Grok Bot prompt (`bot_prompt` from `GET /v1/sessions/{code}/grok`) is the normal prompt plus memory. It tells
 the bot to add the session to `/workspace/eden-matrix/sessions.md` (code, store, collection, date, link), to read
@@ -47,6 +47,13 @@ connected.
        "url": "https://go.edenmatrix.xyz/v1/mcp",
        "headers": { "Authorization": "Bearer em_agent_…" } } } }
    ```
+
+   **Regular Grok (grok.com)** takes custom MCP servers too: grok.com/connectors → New Connector → Custom, then
+   paste a server URL. That dialog takes a URL, not headers, so **Connect Grok (grok.com)** on the dashboard gives
+   a connector URL with the token in it (`https://go.edenmatrix.xyz/v1/mcp?key=em_agent_…`). Every Grok chat then
+   has the Eden tools, including chats opened by Continue in Grok. The API accepts the token from `?key=` as well
+   as the header, and the production entrypoint redacts `em_agent_…` from access logs. The Cloudflare skip rule
+   matches on the path, so it still applies.
 
 4. **Optional: Send to Grok Bot.** In Grok Bot, create an automation triggered "When a webhook fires", give it
    the instructions the dashboard shows, and paste its webhook URL and key into the dashboard. The key is stored

@@ -62,6 +62,13 @@ def test_signed_up_shopper_buys_through_their_agent(make_client):
     tools = {tool["name"] for tool in _rpc(client, token, "tools/list").json()["result"]["tools"]}
     assert {"list_my_sessions", "find_products", "create_purchase_intent"} <= tools
 
+    # grok.com's custom connectors take only a URL, so the token can ride in it instead.
+    assert agent["connector_url"] == f"{agent['mcp_url']}?key={token}"
+    listing = {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+    by_url = client.post("/v1/mcp", params={"key": token}, json=listing)
+    assert by_url.status_code == 200 and len(by_url.json()["result"]["tools"]) == len(tools)
+    assert client.post("/v1/mcp", params={"key": "em_agent_nope"}, json=listing).status_code == 401
+
     # The agent recalls the shopper's sessions and reads the shortlist.
     sessions = _tool(client, token, "list_my_sessions")["structuredContent"]["sessions"]
     assert [s["code"] for s in sessions] == [code]

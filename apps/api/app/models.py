@@ -170,6 +170,9 @@ class AgentCreated(AgentOut):
     token: str = Field(description="Shown once: give it to your agent. Eden keeps only its hash")
     mcp_url: str
     mcp_config: dict = Field(description="Paste into Grok Bot's MCP servers JSON")
+    connector_url: str = Field(
+        description="For clients that only take a URL (grok.com custom connectors); holds the token"
+    )
 
 
 class WebhookIn(BaseModel):

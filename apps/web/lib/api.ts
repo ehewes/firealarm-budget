@@ -90,7 +90,13 @@ export type Card = {
 
 export type Agent = { id: string; name: string; token_hint: string; created_at: string; last_used_at: string | null };
 
-export type AgentCreated = Agent & { token: string; mcp_url: string; mcp_config: Record<string, unknown> };
+export type AgentCreated = Agent & {
+  token: string;
+  mcp_url: string;
+  mcp_config: Record<string, unknown>;
+  /** For clients that only take a URL (grok.com custom connectors). It holds the token. */
+  connector_url: string;
+};
 
 export type Me = {
   id: string;

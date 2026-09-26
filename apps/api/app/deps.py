@@ -48,8 +48,9 @@ def account_user(user: User = Depends(current_user)) -> User:
 async def current_agent(
     request: Request, authorization: str | None = Header(default=None)
 ) -> agents.Agent:
-    """The agent behind an agent token (Authorization: Bearer em_agent_...)."""
-    token = ""
+    """The agent behind an agent token: `Authorization: Bearer em_agent_...`, or `?key=` for
+    clients that only take a URL, such as grok.com's custom connectors."""
+    token = request.query_params.get("key", "")
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization[7:].strip()
     agent = await agents.resolve(request.app.state.db, token)
