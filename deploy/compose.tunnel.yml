@@ -4,7 +4,7 @@
 services:
   cloudflared:
     # Pinned: `latest` changed under the other stacks more than once.
-    image: cloudflare/cloudflared:2026.7.3
+    image: cloudflare/cloudflared:2026.10.7
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:

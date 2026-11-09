@@ -51,7 +51,7 @@ flowchart LR
 
 | Service | Image | Limits | Notes |
 | --- | --- | --- | --- |
-| `caddy` | `caddy:2.10-alpine` | 128 MB | Path routing and security headers. Its config directory is bind-mounted and reloaded on every deploy |
+| `caddy` | `caddy:2.11-alpine` | 128 MB | Path routing and security headers. Its config directory is bind-mounted and reloaded on every deploy |
 | `web` | `ghcr.io/ehewes/firealarm-budget-web:<sha>` | 1 CPU, 384 MB | Next.js standalone. `NEXT_PUBLIC_*` values are baked in at build time. Only runs once `apps/web` exists; until then Caddy answers non-API paths with a short "not deployed yet" message |
 | `api` | `ghcr.io/ehewes/firealarm-budget-api:<sha>` | 1 CPU, 512 MB | FastAPI with scrapes running as `BackgroundTasks` |
 | `cloudflared` | `cloudflare/cloudflared` (pinned) | 128 MB | This project's own tunnel, token-based. It joins only this project's network |
